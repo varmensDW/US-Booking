@@ -1,0 +1,14 @@
+{
+  "name": "us-booking-automation",
+  "version": "0.1.0",
+  "private": true,
+  "description": "US1 booking and label printing (US/Canada) — Phase 1 scaffolding",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "check:env": "node scripts/check-env.mjs",
+    "db:preflight": "node scripts/db-preflight.mjs"
+  }
+}

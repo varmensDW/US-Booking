@@ -1,0 +1,4 @@
+# Keep shell scripts LF even when Git converts line endings on Windows.
+*.sh text eol=lf
+*.sql text eol=lf
+*.mjs text eol=lf

@@ -1,0 +1,35 @@
+# Environment files: real values stay local. Only the template is tracked.
+.env
+.env.*
+!.env.example
+
+# Dependencies
+node_modules/
+
+# Private operational data (customer PII, OMS extracts, Shippo exports)
+exports/
+/export_user_*.csv
+
+# Generated storage contents (labels contain names and addresses); keep the folder itself.
+/storage/*
+!/storage/labels/
+/storage/labels/*
+!/storage/labels/.gitkeep
+
+# Logs, coverage, build output
+*.log
+logs/
+coverage/
+.nyc_output/
+dist/
+build/
+
+# Temporary test-server data (disposable PostgreSQL clusters, test logs)
+/tmp/
+/.tmp/
+cluster_*/
+usb_tests/
+
+# Editor / OS noise
+.DS_Store
+Thumbs.db
