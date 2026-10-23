@@ -8,6 +8,7 @@ const TABS = [
   {href: '/settings', label: 'General'},
   {href: '/settings/package-profiles', label: 'Package Profiles'},
   {href: '/settings/wayfair-sandbox', label: 'Wayfair Sandbox'},
+  {href: '/settings/shippo-test', label: 'Shippo Test'},
 ];
 
 export function SettingsTabs() {

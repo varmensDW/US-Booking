@@ -33,7 +33,8 @@ One existing PostgreSQL server (18.4) holds both databases. No new database is n
 | `BOOKING_MIGRATION_DATABASE_URL` | Booking database, schema owner, used by `npm run db:migrate`. In single-role mode, the same connection as above |
 | `BOOKING_ROLE_MODE` | `single` (approved: one login owns and runs) or `separate` (a DML-only runtime role) |
 | `BOOKING_DATABASE_EXPECTED_NAME` | `varmen_db`. Both booking URLs must point at it |
-| `SHIPPO_API_TOKEN`, `SHIPPO_MODE` | Shippo **test** token and `test`. Not needed for the database preflight |
+| `SHIPPO_API_TOKEN`, `SHIPPO_MODE` | Shippo **test** token (starts `shippo_test_`) and `test`. Not needed for the database preflight; required for Settings → Shippo Test (§3g) |
+| `SHIPPO_SHIP_FROM_*` | This warehouse's ship-from address for Shippo TEST rate shopping (§3g). Required for that page only; never guessed from historical labels |
 | `ENABLE_LIVE_BOOKING` | Keep `false`. A placeholder that nothing reads yet |
 | `LABEL_STORAGE_DIR` | `./storage/labels`. Local development only |
 
@@ -423,7 +424,7 @@ Tokens last 24 hours. The app renews a token after 12 hours, when it is about to
 
 ## 3f. Wayfair-managed packaging (`0011`)
 
-The warehouse team doesn't measure Wayfair orders: Wayfair holds package data from the product listings, and staff print the label Wayfair supplies.
+The warehouse team doesn't measure Wayfair orders: when `packageUnits` is omitted, Wayfair generates the label from package data it already holds. Staff print the label Wayfair supplies. **Where that data comes from is not verified** (see the correction below); earlier drafts of this page called it "the product listings" as if that were settled. It isn't.
 
 **Documentation basis.** Wayfair's Registration & Shipping API guide says:
 
@@ -434,16 +435,151 @@ The warehouse team doesn't measure Wayfair orders: Wayfair holds package data fr
 
 **Sandbox evidence.** The first sandbox registration sent no `packageUnits` and succeeded. **Not verified:** which package data production uses when `packageUnits` is omitted. The documentation doesn't say.
 
+**Correction to the production-test plan (2026-10-23), recorded before any production test is run.** Two points in the plan implied by this section needed fixing. Nothing below changes any code or data; `WAYFAIR_MODE` stays sandbox-only and no production call exists anywhere in this app. Full record: `docs/phase1/2026-10-23_wayfair_production_test_plan_correction.md`.
+
+1. **Authorisation must not be circular.** `provider_packaging_policy.production_verified_at` (set only by a controlled production test, enforced by the booking precondition in `0011`) is the *outcome* of that test. The authorisation to *run* the test cannot be made to depend on that same outcome, or on any other evidence that can only exist after the test has already happened. The test needs its own, separate, narrowly scoped sign-off: one named purchase order, the production registration/label endpoints only, nothing broader. Until that specific authorisation is given, no production call is made.
+2. **A production test verifies the operational result, not where the data came from.** The test is: register that one PO in production, then match the returned label(s) against the physical carton(s) actually packed for it (right count, right carton, correct destination). Passing that check shows the label-to-carton match works. It does not show, and this document must not claim, that the package dimensions and weight Wayfair used came from "the product listing" rather than a stored default, a warehouse assignment, or something else Wayfair holds. That provenance stays unverified regardless of how the operational test goes.
+
 **How the app handles Wayfair parcels:**
 
 - **The record.** A parcel on a Wayfair-routed group starts in `provider_managed` mode. It holds no measurements at all (no zeros, profile values or label-derived values), and the screen shows "Package details not returned to this app". It is one record for the purchase order, not a carton.
 - **Readiness.** The measurement requirement is met by the mode for a group with exactly one order. A merged Wayfair group (several POs) needs a staff decision.
 - **Packaging exception** (consolidated or custom packaging). It needs a reason, then measurements in cm and kg, the units Wayfair documents for `packageUnits`. Staff can return the parcel to Wayfair-managed mode; the cleared values stay in `event_log`.
-- **Booking check.** It accepts `provider_managed` only for Wayfair, only for one-order groups, and only after `provider_packaging_policy.production_verified_at` is set by a controlled production test. Until then, Wayfair-managed parcels cannot be booked.
+- **Booking check.** It accepts `provider_managed` only for Wayfair, only for one-order groups, and only after `provider_packaging_policy.production_verified_at` is set by a controlled production test authorised as above. Until then, Wayfair-managed parcels cannot be booked.
 - **Other providers.** Shippo and Amazon (profiles, prefill and measurement checks) are unchanged. `provider_managed` is refused for them.
 - **Sandbox page.** Registration omits `packageUnits` unless a packaging exception is chosen. Stored labels are reused for preview, download and reprint, with no Wayfair call and no new registration.
 
 Tests: local suite 270 checks (`tests_packaging.sql`), Wayfair mock suite 33 checks.
+
+## 3g. Shippo TEST rate shopping and label purchase (Settings → Shippo Test)
+
+The OMS stays the only source of orders; nothing here imports Shopify/eBay orders or updates any
+marketplace fulfilment. This page requests TEST-mode rates and buys TEST-mode labels against
+Shippo's real API (or a local mock for automated tests), for a synthetic shipment only. It never
+touches a live `fulfilment_group`, `parcel`, `booking_attempt` or `provider_shipment`.
+
+**Configuration** (`.env`, server-only; see `.env.example`):
+
+| Key | Meaning |
+|---|---|
+| `SHIPPO_MODE` | must be `test`; any other value disables the page |
+| `SHIPPO_API_TOKEN` | must start with `shippo_test_` (Shippo's documented test-token prefix); a token that looks like a live token (`shippo_live_...`) is refused before any call |
+| `SHIPPO_SHIP_FROM_*` | this warehouse's ship-from address (name, company, street1, street2, city, state, zip, country, phone, email). **Required**; rate shopping is refused while any required field is missing. Never guessed from `hist_shippo_label` or any other historical data |
+| `SHIPPO_SHIP_RETURN_*` | **Optional**, same shape as `SHIPPO_SHIP_FROM_*`. This Shippo account has a different default sender and return address; Shippo's documentation does not say what address a return label uses when `address_return` is omitted (not "defaults to the ship-from address", not "uses the dashboard return address" — undocumented either way). So this app sends `address_return` only when this is explicitly set, and the status card reports "not configured" rather than assuming either default. Setting only some of the fields is treated as a configuration error (complete it or clear it entirely) |
+
+**Endpoints** are fixed in `src/server/shippo/config.ts` from Shippo's official API documentation
+(docs.goshippo.com, read 2026-10-24): `POST /shipments` (rates), `POST /transactions` (label
+purchase), `GET /transactions/{id}` (reconciliation), `GET /rates/{id}` (a read-only lookup used
+only to recover `carrier_account` for an attempt that did not capture it), `GET /carrier_accounts`
+(the authentication check: read-only, creates nothing). The `Authorization: ShippoToken <token>`
+header is sent only to Shippo's own API, never to a returned label or invoice URL.
+
+**Workflow:**
+
+1. **Status.** Shows whether the token and ship-from address are configured, whether the token
+   looks like a test token, and the result of the last "Test authentication" press (a read-only
+   call; it books nothing).
+2. **New test shipment.** Destination is restricted to United States or Canada, matching this
+   app's scope. The recipient starts from Shippo's own documented example address (obviously
+   synthetic; "Mr Hippo"), editable, and is never derived from an OMS order or a real customer. The
+   parcel starts from the saved **US1 Shippo Default** profile (9 × 6 × 6 in, 2 kg) read from
+   `package_profile`/`package_profile_version`; changing it here never writes to the saved profile.
+   For Canada, a customs declaration is required and nothing in it is prefilled — contents type,
+   certifier, and at least one item (description, weight, value, origin, HS/tariff number) must be
+   entered explicitly. An optional "export compliance" group (incoterm, EEL/PFC, AES ITN, B13A
+   filing) is shown with nothing pre-selected; Shippo's documentation names `NOEEI_30_36` as typical
+   for most US→CA shipments, shown as a label only, not a default. "Get test rates" calls
+   `POST /shipments` and stores the rates and any provider messages (`shippo_test_shipment`,
+   append-only).
+3. **Rate selection.** Each returned rate shows carrier, service, price, currency and delivery
+   estimate (`estimated_days`, `duration_terms`) as radio choices with none pre-selected; staff
+   must click one. Nothing picks the cheapest automatically.
+4. **Purchase.** "Purchase TEST label" commits a `shippo_test_purchase` row in state `requested`
+   *before* calling Shippo, with a correlation key sent as the transaction's `metadata`. The
+   carrier, service, amount, currency and `carrier_account` of the exact rate staff selected are
+   recorded on the attempt itself (not only inside `rate_summary`) regardless of outcome — this is
+   Shippo's own data for that rate, never guessed from the tracking number. A unique index allows
+   at most one `requested`/`unknown` purchase per test shipment at a time, **and once a shipment has
+   a succeeded or staff-confirmed purchase it is done and is not purchased again** — a second click,
+   a concurrent request, or a repeat attempt on a completed shipment is refused with 409 before it
+   reaches Shippo; a failed or rejected attempt may still be retried. The outcome is accepted as
+   `succeeded` only when Shippo's response has `status: SUCCESS` **and** `test: true`; anything else
+   — `ERROR`, a transaction not marked test mode, a timeout, an HTTP 5xx, or an undocumented status
+   such as `QUEUED`/`WAITING` — is recorded as `failed`, `rejected_not_test` or `unknown` and is
+   **never** retried automatically. An `unknown` outcome blocks further purchases for that shipment
+   until a staff member resolves it with evidence (Shippo's dashboard or support); if Shippo gave no
+   transaction id, there is nothing to reconcile and the resolution says so rather than guessing.
+5. **Label format.** A setting (`shippo_test_settings`, one row) holds the `label_file_type` sent
+   on **future** purchases only (`PDF`, `PDF_4x6`, `PDF_A4`, …, Shippo's documented
+   `LabelFileTypeEnum`); left unset, no `label_file_type` is sent at all, so Shippo applies whatever
+   format its own dashboard has as the account default. This app never assumes a thermal printer or
+   a paper size, and changing the setting never touches a label already stored.
+6. **Label and customs invoice.** "Fetch and store TEST label" downloads the original file Shippo
+   returned (via its `label_url`, or by re-checking `GET /transactions/{id}` first for a
+   resolved-but-unknown purchase) and stores it under `LABEL_STORAGE_DIR/shippo-test/` with its
+   SHA-256 (`shippo_test_label`, `kind = 'label'`, append-only). If Shippo also returned a
+   `commercial_invoice_url` (seen for international TEST transactions), it is stored alongside the
+   label as a second row (`kind = 'customs_invoice'`), with its own preview/download line. A second
+   fetch for the same purchase, and every preview/download/reprint afterwards, reuses whichever file
+   is already stored per kind: zero further calls to Shippo, and never a second purchase.
+7. **Recovering missing details.** A purchase made before `carrier_account` was captured (or one
+   whose rate omitted it) shows "Recover details"; it fills only columns that are still `NULL` and
+   only for a purchase that has already completed, preferring the attempt's own saved `rate_summary`
+   and falling back to a read-only `GET /rates/{id}` lookup by the purchase's own saved
+   `rate_object_id`. It never overwrites a value already recorded and never guesses from the
+   tracking number; if Shippo no longer has the rate on record (rates expire), it says so plainly.
+
+**Isolation.** `shippo_test_shipment`, `shippo_test_purchase`, `shippo_test_label` and
+`shippo_test_settings` have no foreign key to, and are read by no view or function of, the live
+booking tables. Live totals (`booking_attempt`, `label_file`, `parcel`) are unaffected by anything
+on this page.
+
+**Verified against the real Shippo TEST API (2026-10-24):** a real US→CA rate request (with the
+customs declaration above) returned 8 real carrier rates, each with a real `carrier_account`; one
+of Shippo's own validation messages for this account/route was `Attribute
+"customs_declaration.incoterm" must be present` for a subset of carriers — confirming `incoterm`
+matters for at least this account even though Shippo's base schema lists it as optional, and
+confirming messages are shown rather than swallowed. `recover-details` was also run for real against
+the attempt made from the dashboard before this fix (§ below) and filled its `carrier_account` from
+a live `GET /rates/{id}` call. No real label was purchased by this process; see "One real Canada
+purchase" below for the dashboard steps to do that deliberately.
+
+**Tests.**
+
+- `db/tests/tests_shippo_test.sql` is part of the local suite (298 checks total after `0013`).
+- `tests/shippo/mock-server.mjs` with `tests/shippo/run-mock-tests.mjs` runs 63 checks against a
+  synthetic instance: authentication (rejected/outage/ok), units and `carrier_account` sent/received
+  exactly as entered, Canada customs (including `eel_pfc`) required before any Shippo call, an
+  address-return address sent only when configured, an empty-rate answer shown with its message,
+  explicit (non-cheapest) rate selection, concurrent/duplicate purchase blocking, a completed
+  shipment refusing a further purchase while a failed one may retry, HTTP 500 and a timeout both
+  recorded as unknown, resolution with and without a provider transaction id to reconcile against,
+  a rejected (`ERROR`) and a not-test-mode transaction both kept unusable, a Canada purchase storing
+  its commercial invoice alongside the label, the label-format setting applying to future purchases
+  only and never altering a stored label, `recover-details` filling a missing `carrier_account` from
+  a live rate lookup (and reporting plainly when the rate has expired), stored-label reuse across
+  repeated preview/download/reprint, a live-looking token refused mid-session, and a leak check.
+
+### One real Canada purchase (staff, via the dashboard)
+
+Mocks cover the mechanics above; this is the one real TEST-mode purchase a staff member should make
+through Settings → Shippo Test to confirm Canada end-to-end against the live Shippo account:
+
+1. Click **Canada** under Destination (fills the synthetic Toronto recipient; the parcel stays the
+   US1 Shippo Default 9×6×6 in, 2 kg).
+2. Fill the customs section: contents type, certifying signer, at least one item (description, net
+   weight, value, origin country). Given the real message seen above, also set **Incoterm** (for
+   example `DDU`) — leaving it unset may cause some carriers to return a rate-level error, which is
+   expected and shown, not hidden.
+3. Click **Get test rates**, read any per-carrier messages shown, then pick one rate explicitly —
+   not necessarily the cheapest.
+4. Click **Purchase TEST label for the selected rate**. Confirm it reaches `succeeded` with
+   "Shippo test mode confirmed".
+5. Click **Fetch and store TEST label**. Confirm the label preview opens, and — if Shippo returned
+   one for this route — a separate "Customs invoice" line appears alongside it.
+6. Reload the page and confirm the shipment now shows "Completed — label purchased" with no rate
+   list or purchase button; reopen the stored label from the Settings page again to confirm preview
+   and download still work without creating anything new.
 
 ## 4. Schema test suite (optional)
 
@@ -455,7 +591,7 @@ The suite:
 
 - initialises a disposable PostgreSQL cluster on port 55432 (override with `TEST_PG_PORT`) and verifies it is talking to that cluster;
 - applies `db/migrations/*.sql` (twice, to prove they are idempotent), then the deferred separate-role grants;
-- loads synthetic fixtures and runs the tests (270 checks, including `tests_wayfair_sandbox.sql` and `tests_packaging.sql`; `tests.sql`, `tests_actions.sql` for 0006–0008, `tests_contents.sql` and `concurrency_contents.sh` for 0009);
+- loads synthetic fixtures and runs the tests (298 checks, including `tests_wayfair_sandbox.sql`, `tests_packaging.sql` and `tests_shippo_test.sql`; `tests.sql`, `tests_actions.sql` for 0006–0008, `tests_contents.sql` and `concurrency_contents.sh` for 0009);
 - deletes the cluster afterwards.
 
 It never touches an existing server.

@@ -110,3 +110,20 @@ TO us_booking_app;
 -- Added with 0011 (Wayfair-managed packaging).
 GRANT SELECT ON us_booking.provider_packaging_policy TO us_booking_app;
 GRANT EXECUTE ON FUNCTION us_booking.staff_parcel_set_packaging(jsonb) TO us_booking_app;
+
+-- Added with 0012 (Shippo TEST records; written only through the shippo_test_* functions).
+GRANT SELECT, INSERT ON us_booking.shippo_test_shipment TO us_booking_app;
+GRANT SELECT, INSERT, UPDATE ON us_booking.shippo_test_purchase TO us_booking_app;
+GRANT SELECT, INSERT ON us_booking.shippo_test_label TO us_booking_app;
+GRANT USAGE ON us_booking.shippo_test_shipment_id_seq, us_booking.shippo_test_purchase_id_seq, us_booking.shippo_test_label_id_seq TO us_booking_app;
+GRANT EXECUTE ON FUNCTION
+  us_booking.shippo_test_shipment_add(jsonb), us_booking.shippo_test_purchase_begin(jsonb), us_booking.shippo_test_purchase_finish(jsonb),
+  us_booking.shippo_test_purchase_resolve(jsonb), us_booking.shippo_test_label_add(jsonb)
+TO us_booking_app;
+
+-- Added with 0013 (carrier/carrier-account backfill, label format setting). New columns on
+-- shippo_test_purchase/shippo_test_label are covered by the table-level grants just above.
+GRANT SELECT, UPDATE ON us_booking.shippo_test_settings TO us_booking_app;
+GRANT EXECUTE ON FUNCTION
+  us_booking.shippo_test_purchase_recover_details(jsonb), us_booking.shippo_test_set_label_format(jsonb)
+TO us_booking_app;

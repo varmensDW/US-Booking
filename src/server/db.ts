@@ -115,6 +115,13 @@ export const SANDBOX_FUNCTIONS = [
   'wayfair_sandbox_label_add',
 ] as const;
 export type SandboxFunctionName = (typeof SANDBOX_FUNCTIONS)[number];
+// Shippo TEST-mode record functions (db/migrations/0012): called only by server code
+// (src/server/shippo), never mapped to /api/actions. Isolated from live booking the same way.
+export const SHIPPO_TEST_FUNCTIONS = [
+  'shippo_test_shipment_add', 'shippo_test_purchase_begin', 'shippo_test_purchase_finish', 'shippo_test_purchase_resolve',
+  'shippo_test_label_add', 'shippo_test_purchase_recover_details', 'shippo_test_set_label_format',
+] as const;
+export type ShippoTestFunctionName = (typeof SHIPPO_TEST_FUNCTIONS)[number];
 
 // Rejection of a staff action by the database (validation, stale data, locks), safe to show staff.
 export class ActionError extends Error {
@@ -125,8 +132,9 @@ export class ActionError extends Error {
 
 // Calls one staff action in its own transaction. The payload travels base64-encoded inside the
 // SQL text, so no value can break out of its literal; the database name is checked before writing.
-export async function runAction<T>(fn: ActionName | SandboxFunctionName, payload: Record<string, unknown>): Promise<T> {
-  if (!(ACTIONS as readonly string[]).includes(fn) && !(SANDBOX_FUNCTIONS as readonly string[]).includes(fn)) {
+export async function runAction<T>(fn: ActionName | SandboxFunctionName | ShippoTestFunctionName, payload: Record<string, unknown>): Promise<T> {
+  if (!(ACTIONS as readonly string[]).includes(fn) && !(SANDBOX_FUNCTIONS as readonly string[]).includes(fn)
+      && !(SHIPPO_TEST_FUNCTIONS as readonly string[]).includes(fn)) {
     throw new ActionError(400, 'Unknown action');
   }
   const conn = connection('booking', {write: true});

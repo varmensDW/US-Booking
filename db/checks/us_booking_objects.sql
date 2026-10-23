@@ -6,7 +6,7 @@
 SELECT version, filename, left(sha256, 12) AS sha256, applied_at, applied_by
 FROM us_booking.schema_migration ORDER BY version;
 
--- 2. Object counts by kind. Expect 25 tables (24 + schema_migration), 2 views, 0 objects owned by
+-- 2. Object counts by kind. Expect 35 tables (34 + schema_migration), 4 views, 0 objects owned by
 --    anyone but the schema owner.
 SELECT CASE c.relkind WHEN 'r' THEN 'table' WHEN 'p' THEN 'partitioned table' WHEN 'v' THEN 'view'
                       WHEN 'i' THEN 'index' WHEN 'S' THEN 'sequence' ELSE c.relkind::text END AS kind,
