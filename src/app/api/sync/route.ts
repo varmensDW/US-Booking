@@ -2,6 +2,7 @@ import {NextResponse} from 'next/server';
 import {getStatus, getSyncRuns} from '@/server/queries';
 import {errorBody} from '@/server/db';
 import {currentJob, startSync} from '@/server/sync-job';
+import {sameOrigin} from '@/server/request';
 import type {SyncStatusResponse} from '@/shared/types';
 
 export const dynamic = 'force-dynamic';
@@ -18,7 +19,8 @@ export async function GET() {
 }
 
 // Explicit sync. Refused while a sync is running, and when either database is unavailable.
-export async function POST() {
+export async function POST(req: Request) {
+  if (!sameOrigin(req)) return NextResponse.json({error: 'Cross-site requests are not accepted'}, {status: 403});
   const running = currentJob();
   if (running?.state === 'running') {
     return NextResponse.json({error: 'A sync is already running', job: running}, {status: 409});

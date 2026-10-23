@@ -30,6 +30,7 @@ export interface ReviewCaseRow {
   resolved_at: string | null;
   resolution: string | null;
   details: Record<string, unknown>;
+  details_hash: string;           // md5 of details: sent back when closing, to refuse stale decisions
 }
 
 export interface QueueGroup {
@@ -51,6 +52,7 @@ export interface QueueGroup {
   ordered_quantity_total: number;
   parcel_count: number;
   prior_label_check: 'oms_shipping_signal_present' | 'not_established';
+  open_discrepancies: number;     // parcels whose confirmed contents no longer match the OMS lines
   destinations: OrderDestination[];
   unmet: Requirement[];
   open_cases: ReviewCaseRow[];
@@ -95,6 +97,7 @@ export interface DetailOrder {
          line3: string | null; city: string | null; region: string | null; postcode: string | null;
          phone_present: boolean; email_present: boolean};
   destination: OrderDestination;
+  address_hash: string;           // ship-to version: sent back with destination actions (stale-edit check)
   confirmations: Array<{id: number; destination_iso2: string; evidence_type: string; evidence_ref: string;
                         confirmed_by: string; confirmed_at: string; status: string; revoke_reason: string | null;
                         valid_for_current_address: boolean}>;
@@ -112,27 +115,120 @@ export interface DetailLine {
   quantity_ordered: number;
   quantity_raw: string;
   combo_count: number | null;
+  allocated_qty: number;          // units in non-cancelled parcels
+  absent_from_oms_since: string | null;  // the OMS no longer returns this line (row kept)
   components: Array<{sku: string; qty: number | null}>;
+}
+
+export type DimensionUnit = 'in' | 'cm';
+export type WeightUnit = 'lb' | 'kg' | 'oz' | 'g';
+export type ValueSource = 'profile' | 'staff';
+
+export interface ProfileVersion {
+  version: number;
+  length: number;
+  width: number;
+  height: number;
+  dimension_unit: DimensionUnit;
+  packed_weight: number | null;       // total packed shipment weight to prefill
+  packed_weight_unit: WeightUnit | null;
+  empty_weight: number | null;        // empty packaging only; never a shipment weight
+  empty_weight_unit: WeightUnit | null;
+  note: string | null;
+  approved_by: string;
+  approved_at: string;
 }
 
 export interface DetailParcel {
   id: number;
   parcel_no: number;
   state: string;
-  contents_status: string;
-  measured: boolean;
+  row_version: number;
+  contents_status: 'unconfirmed' | 'confirmed' | 'stale';  // stale: confirmed, then the order lines changed
+  confirmed_by: string | null;
+  confirmed_at: string | null;
+  length: number | null;
+  width: number | null;
+  height: number | null;
+  dimension_unit: DimensionUnit | null;
+  dimensions_source: ValueSource | null;
+  weight: number | null;              // total packed shipment weight
+  weight_unit: WeightUnit | null;
+  weight_source: ValueSource | null;
+  measured_by: string | null;         // who entered staff values; null for profile values
+  measured_at: string | null;
+  profile: {profile_id: number; name: string; values: ProfileVersion} | null;  // the version recorded on this parcel
+  locked: boolean;                    // pending/unknown/active purchase or live label
+  discrepancy: ContentsDiscrepancy | null;  // the open one, else the latest closed one
   items: Array<{oms_order_item_id: number; quantity: number}>;
+}
+
+export interface ContentsChange {
+  kind: 'order_added_to_group' | 'order_removed_from_group' | 'item_taken_out_of_parcel' | 'ordered_quantity_changed' | 'sku_changed'
+    | 'line_no_longer_in_oms' | 'line_back_in_oms' | 'order_left_group' | 'packed_quantity_edited' | 'item_added_to_parcel';
+  line?: number;
+  order?: number;
+  sku?: string;
+  from?: number | string;
+  to?: number | string;
+  packed_here?: number;
+  packed_all_parcels?: number;
+  below_packed?: boolean;
+}
+
+export interface ContentsDiscrepancy {
+  id: number;
+  status: 'open' | 'reconciled' | 'acknowledged';
+  parcel_locked: boolean;
+  changes: ContentsChange[];
+  confirmed_basis: {members: number[]; items: Array<{line: number; order: number; packed: number; ordered: number; sku: string}>};
+  confirmed_by: string | null;
+  confirmed_at: string | null;
+  current_hash: string;
+  detected_at: string;
+  last_checked_at: string;
+  resolved_by: string | null;
+  resolved_at: string | null;
+  resolution: string | null;
 }
 
 export interface GroupDetail {
   group: {id: number; group_key: string; state: string; provider: string; provider_account: string;
-          blocked_reason: string | null; created_at: string; updated_at: string};
+          blocked_reason: string | null; warehouse_id: number; created_at: string; updated_at: string};
+  allocation_problems: string | null;  // allocations the current order lines no longer support
+  package_default: {assignment: string; profile_id: number; profile_name: string; values: ProfileVersion} | null;
   orders: DetailOrder[];
   lines: DetailLine[];
   parcels: DetailParcel[];
   requirements: Requirement[];
   cases: ReviewCaseRow[];
   routing: RoutingRule[];
+}
+
+export interface PackageProfile {
+  id: number;
+  name: string;
+  approval_status: 'proposed' | 'approved' | 'retired';
+  current_version: number | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  parcels_using: number;
+  versions: ProfileVersion[];         // newest first
+}
+
+export interface ProfileAssignment {
+  assignment: 'us1_shippo' | 'us1_amazon';
+  warehouse_id: number;
+  provider: string;
+  profile_id: number | null;
+  assigned_by: string | null;
+  assigned_at: string | null;
+}
+
+export interface PackageProfilesResponse {
+  profiles: PackageProfile[];
+  assignments: ProfileAssignment[];
 }
 
 export interface SyncRun {

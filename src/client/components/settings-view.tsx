@@ -37,7 +37,7 @@ export function SettingsView() {
   const s = status.data!;
   return (
     <div className="space-y-5">
-      <p className="text-sm text-muted">Checked {formatTimestamp(s.checked_at)}. Read-only: settings are changed in the project <code className="rounded bg-surface px-1 font-mono text-xs">.env</code> file on the server, and values are never shown here.</p>
+      <p className="text-sm text-muted">Checked {formatTimestamp(s.checked_at)}. Connection settings are read-only here: they are changed in the project <code className="rounded bg-surface px-1 font-mono text-xs">.env</code> file on the server, and values are never shown. Package defaults are set under Package Profiles.</p>
       <div className="grid gap-5 lg:grid-cols-2">
         <Card className="p-5">
           <div className="mb-3 flex items-center gap-3"><IconTile icon={Database} tone="teal" size="sm" /><h2 className="text-sm font-semibold">Connections</h2></div>

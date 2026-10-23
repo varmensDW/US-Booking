@@ -14,7 +14,7 @@ import {SyncActivityBar, SyncButton, SyncOutcome} from '@/client/components/sync
 const NAV: Array<{href: string; label: string; icon: LucideIcon; title: string; subtitle: string}> = [
   {href: '/review', label: 'Order Review', icon: ClipboardList, title: 'Order Review', subtitle: 'Fulfilment groups imported from the OMS, awaiting staff review'},
   {href: '/sync-history', label: 'Sync History', icon: History, title: 'Sync History', subtitle: 'Recorded OMS imports into the booking database'},
-  {href: '/settings', label: 'Settings', icon: Settings, title: 'Settings', subtitle: 'Connections, routes and integration readiness (read-only)'},
+  {href: '/settings', label: 'Settings', icon: Settings, title: 'Settings', subtitle: 'Connections, routes and package defaults'},
 ];
 
 const STORAGE_KEY = 'usb.sidebar.collapsed';

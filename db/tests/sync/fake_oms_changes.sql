@@ -32,7 +32,7 @@ UPDATE order_management.orders SET "merge" = 'merged' WHERE id = 5011;
 INSERT INTO order_management.orders VALUES (5012, 'SYN-SHO-5012', 'Inprogress', '2026-10-06 11:00:00', '5011', 245, 'US', 32);
 INSERT INTO order_management.order_item_info VALUES (50121, 5011, 5012, 'L1', 'SYN-LAMP-I', 'SYN-LAMP-I', '1', '1', 0);
 INSERT INTO customers.shipping_address (order_id, address_name, address_line_1, region, city, postcode, country_id, phone)
-VALUES (5012, 'Synthetic H', '11 Test St', 'WA', 'Testshire', '98001', 8, '5550011');
+VALUES (5012, 'Synthetic H', '11 Test St', 'WA', 'Testshire', '98001', 9008, '5550011');
 
 -- 5007: new tracking evidence (the dismissed shipping finding changes), and real_sku now filled
 -- (the resolved blank-SKU finding clears).

@@ -11,6 +11,11 @@
 // and the snapshot itself (which holds customer addresses) is never printed or written to disk:
 // only counts, ids and review reasons are reported. No booking attempt is created and no shipping
 // provider is contacted.
+//
+// A failed --apply run is recorded in us_booking.sync_run (status failed) by a separate, committed
+// call to us_booking.sync_record_failure() (db/migrations/0008), because the import transaction and
+// its 'running' row are rolled back. The stored message has credentials and host names removed.
+// Failures before the booking database is reachable cannot be recorded there.
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -32,8 +37,26 @@ if (env('ENABLE_LIVE_BOOKING') === 'true') {
   console.log('Note: ENABLE_LIVE_BOOKING=true has no effect here; this command never books or prints.');
 }
 
+const startedAt = new Date().toISOString();
+let booking = null; // set once the booking connection is identified; enables failure records
+let failureStage = 'connecting';
+
+// Stores a failed --apply run in its own transaction. Dry runs write nothing, so they record nothing.
+function recordFailure(msg) {
+  if (!apply || !booking) return;
+  const hosts = [booking.env.PGHOST, oms?.env?.PGHOST].filter(Boolean);
+  const clean = hosts.reduce((t, h) => t.split(h).join('[host]'), msg)
+    .split(/\r?\n/).filter(l => l.trim() && !/^(LOCATION|CONTEXT|DETAIL|HINT|STATEMENT):/.test(l.trim())).join(' | ').slice(0, 900);
+  const payload = Buffer.from(JSON.stringify({started_at: startedAt, error: clean, stage: failureStage, actor: 'system:oms-sync'})).toString('base64');
+  const r = runPsql({...booking, env: {...booking.env, PGOPTIONS: '-c lock_timeout=3s -c statement_timeout=15s'}}, ['-q', '-A', '-t'],
+    `SELECT us_booking.sync_record_failure(convert_from(decode('${payload}', 'base64'), 'UTF8')::jsonb);\n`);
+  if (r.status === 0) console.error(`Failure recorded as sync run ${r.stdout.trim()} (Sync History).`);
+  else console.error('The failure could not be recorded in sync history (another sync may hold the lock, or migration 0008 is not applied).');
+}
+
 const fail = msg => {
   console.error(`STOP: ${msg}`);
+  recordFailure(msg);
   process.exit(1);
 };
 
@@ -41,17 +64,18 @@ const fail = msg => {
 const oms = connectionEnv(env('OMS_READ_DATABASE_URL'), omsName,
   {appName: 'us-booking-oms-sync', options: '-c default_transaction_read_only=on -c statement_timeout=120s'});
 if (oms.error) fail(`OMS_READ_DATABASE_URL: ${oms.error.replace('BOOKING_DATABASE_EXPECTED_NAME', `the OMS database name (${omsName})`)}.`);
-const booking = connectionEnv(env('BOOKING_DATABASE_URL'), bookingName,
+const bookingConn = connectionEnv(env('BOOKING_DATABASE_URL'), bookingName,
   {appName: 'us-booking-oms-sync', options: '-c lock_timeout=5s -c statement_timeout=120s'});
-if (booking.error) fail(`BOOKING_DATABASE_URL: ${booking.error}.`);
-if (oms.env.PGHOST === booking.env.PGHOST && oms.env.PGPORT === booking.env.PGPORT && oms.env.PGDATABASE === booking.env.PGDATABASE) {
+if (bookingConn.error) fail(`BOOKING_DATABASE_URL: ${bookingConn.error}.`);
+if (oms.env.PGHOST === bookingConn.env.PGHOST && oms.env.PGPORT === bookingConn.env.PGPORT && oms.env.PGDATABASE === bookingConn.env.PGDATABASE) {
   fail('OMS and booking URLs point at the same database.');
 }
 
+const bookingId = identify(bookingConn, bookingName);
+if (bookingId.error) fail(`booking: ${bookingId.error}.`);
+booking = bookingConn;
 const omsId = identify(oms, omsName);
 if (omsId.error) fail(`OMS: ${omsId.error}.`);
-const bookingId = identify(booking, bookingName);
-if (bookingId.error) fail(`booking: ${bookingId.error}.`);
 console.log(`OMS:     database ${omsId.database}, role ${omsId.role} (read-only session)`);
 console.log(`Booking: database ${bookingId.database}, role ${bookingId.role}`);
 console.log(`Mode:    ${apply ? 'APPLY (commit)' : 'dry run (rolled back)'}; at most ${limit} new group(s)\n`);
@@ -75,6 +99,7 @@ if (ready.error) fail(`booking schema check failed.\n${ready.error}`);
 if (ready.rows[0]?.[0] !== 't' || ready.rows[0]?.[1] !== 't') fail('migration 0003 is not applied (npm run db:migrate).');
 
 // --- Read the OMS ------------------------------------------------------------------------------
+failureStage = 'reading_oms';
 const refresh = queryRows(booking, `SELECT fo.oms_order_id FROM us_booking.fulfilment_group_order fo
   JOIN us_booking.fulfilment_group g ON g.id = fo.fulfilment_group_id
  WHERE fo.active AND g.state NOT IN ('superseded', 'cancelled') ORDER BY 1`);
@@ -99,6 +124,7 @@ console.log(`Read from OMS: ${groups.filter(g => g.reason === 'new').length} new
   + `${count('orders')} order(s), ${count('items')} line(s), ${count('combos')} combo component row(s).`);
 
 // --- Write the booking schema --------------------------------------------------------------------
+failureStage = 'writing_booking';
 const json = JSON.stringify(snapshot);
 let tag;
 do tag = `$snap_${crypto.randomBytes(6).toString('hex')}$`; while (json.includes(tag));

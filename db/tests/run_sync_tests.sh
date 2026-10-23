@@ -107,6 +107,7 @@ summary_has() { # label, javascript predicate over the SUMMARY object `s`
   echo "== S6 sync after changes"
   sync --apply | tee "$WORK/last_sync.out"
   summary_has 'S6 one group superseded, one order moved' 's.counts.groups_superseded === 1 && s.orders_moved.length === 1 && s.orders_moved[0].oms_order_id === 5001'
+  summary_has 'S6 the sync reports one stale parcel confirmation' 's.counts.parcel_confirmations_stale === 1 && s.open_contents_discrepancies === 1'
   check assert_changes.sql
 
   echo "== S7 re-run after changes"
@@ -117,6 +118,15 @@ summary_has() { # label, javascript predicate over the SUMMARY object `s`
   pg -U "$SUPER" -d ledsone -f "$HERE/sync/fake_oms_recur.sql"
   sync --apply | tee "$WORK/last_sync.out"
   check assert_recur.sql
+
+  echo "== S9 a failed --apply run is recorded (OMS read refused), then S10 a successful run"
+  pg -U "$SUPER" -d ledsone -c "REVOKE SELECT ON order_management.shipment FROM oms_reader"
+  # The expected failure output stays out of the log (its STOP/ERROR lines are not test errors).
+  sync --apply >"$WORK/failed_sync.out" || true
+  pg -U "$SUPER" -d ledsone -c "GRANT SELECT ON order_management.shipment TO oms_reader"
+  if grep -q '^Failure recorded as sync run' "$WORK/failed_sync.out"; then echo "PASS [S9 the script reports the recorded failure]"; else echo "FAIL [S9 the script reports the recorded failure]"; fi
+  sync --apply | tee "$WORK/last_sync.out"
+  check assert_failure.sql
 } 2>&1 | tee "$LOG"
 status=${PIPESTATUS[0]}
 

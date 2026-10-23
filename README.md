@@ -15,7 +15,7 @@ Staff confirm package dimensions, weight and contents before booking.
 - The booking schema (rev 2) is **applied** in `varmen_db.us_booking` via `npm run db:migrate` (migrations 0001–0004, 2026-10-23).
 - Approved role setup: `varmen_user` owns the schema and is also the runtime login (`BOOKING_ROLE_MODE=single`). See `docs/setup.md` for what that does and does not enforce.
 - **OMS order sync:** `npm run sync:oms` (dry run) / `-- --apply`. It reads `ledsone` read-only and imports open US1 groups into the review queue. The first limited import ran on 2026-10-23: 15 groups, all awaiting review.
-- **Review dashboard:** `npm run build && npm run start` serves http://127.0.0.1:3100 (Order Review, Sync History, Settings). It is read-only except for the explicit Sync Orders action.
+- **Review dashboard:** `npm run build && npm run start` serves http://127.0.0.1:3100 (Order Review, Sync History, Settings, Settings → Package Profiles). Staff can prepare parcels from the default package profiles, confirm destinations the verified country map cannot resolve, and record decisions on findings (docs/setup.md §3d); otherwise it only reads, apart from the explicit Sync Orders action.
 - **No provider integration exists yet.** Purchase and print are unavailable; nothing is booked or printed.
   - `ENABLE_LIVE_BOOKING` (false) and `SHIPPO_MODE` are placeholders that nothing reads yet.
 

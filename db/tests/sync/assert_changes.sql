@@ -47,7 +47,7 @@ SELECT test_support.ok('S6 staff check on unchanged data left as staff set it',
   (SELECT status = 'met' AND checked_by = 'staff@example.test' FROM us_booking.shipment_requirement
     WHERE oms_order_id = 5005 AND requirement = 'ship_to_phone'));
 SELECT test_support.ok('S6 staff parcel kept',
-  (SELECT count(*) FROM us_booking.parcel WHERE fulfilment_group_id = test_support.gid(5002) AND length_in = 10) = 1);
+  (SELECT count(*) FROM us_booking.parcel WHERE fulfilment_group_id = test_support.gid(5002) AND length = 10) = 1);
 SELECT test_support.ok('S6 unchanged dismissed cancellation not reopened',
   (SELECT count(*) FROM us_booking.review_case WHERE oms_order_id = 5002 AND case_type = 'cancellation') = 1
   AND NOT EXISTS (SELECT 1 FROM us_booking.review_case WHERE oms_order_id = 5002 AND case_type = 'cancellation' AND status = 'open'));
@@ -98,3 +98,15 @@ SELECT test_support.ok('S6 one active membership per order',
   (SELECT count(*) FROM us_booking.fulfilment_group_order WHERE active) = 11
   AND (SELECT count(DISTINCT oms_order_id) FROM us_booking.fulfilment_group_order WHERE active) = 11);
 SELECT test_support.ok('S6 still no booking attempts', (SELECT count(*) FROM us_booking.booking_attempt) = 0);
+
+-- 0009: a confirmed parcel whose line disappeared from the OMS.
+SELECT test_support.ok('S6 line missing from the OMS recorded on the line (row kept)',
+  (SELECT oms_absent_since IS NOT NULL AND quantity_ordered = 4 FROM us_booking.oms_order_item WHERE oms_order_item_id = 50051));
+SELECT test_support.ok('S6 confirmed merge-group parcel became stale with the change listed; packed units untouched',
+  (SELECT contents_status = 'stale' AND confirmed_by = 'Synthetic Staff' FROM us_booking.parcel WHERE id = test_support.pid(5003, 1))
+  AND (SELECT changes @> '[{"kind": "line_no_longer_in_oms", "line": 50051, "packed_here": 4}]' AND status = 'open' AND NOT parcel_locked
+         FROM us_booking.parcel_contents_discrepancy WHERE parcel_id = test_support.pid(5003, 1))
+  AND (SELECT quantity FROM us_booking.parcel_item WHERE parcel_id = test_support.pid(5003, 1) AND oms_order_item_id = 50051) = 4);
+SELECT test_support.ok('S6 group contents requirement unmet after the sync',
+  (SELECT status = 'unmet' AND detail LIKE '%no longer has this line%' FROM us_booking.shipment_requirement
+    WHERE fulfilment_group_id = test_support.gid(5003) AND requirement = 'parcel_contents'));

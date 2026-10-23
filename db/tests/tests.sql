@@ -43,7 +43,9 @@ SELECT test_support.ok('T7 Canada order in scope',
   (SELECT scope_status = 'in_scope' AND destination_iso2 = 'CA' FROM us_booking.v_order_scope WHERE oms_order_id = 9002));
 SELECT test_support.ok('T7 GB order out of scope',
   (SELECT scope_status FROM us_booking.v_order_scope WHERE oms_order_id = 9004) = 'out_of_scope');
-SELECT test_support.ok('T7 confirmations did not create country_map rows', (SELECT count(*) FROM us_booking.country_map) = 0);
+SELECT test_support.ok('T7 confirmations did not create country_map rows (only the two from 0006 exist)',
+  (SELECT count(*) FROM us_booking.country_map) = 2
+  AND NOT EXISTS (SELECT 1 FROM us_booking.country_map WHERE oms_country_id NOT IN (8, 359)));
 SELECT test_support.expect_error('T7 app cannot write the global country map',
   $q$INSERT INTO us_booking.country_map (oms_country_id, iso2, status) VALUES (8, 'US', 'unverified')$q$,
   'permission denied');
@@ -74,29 +76,49 @@ DELETE FROM us_booking.country_map WHERE oms_country_id = 12;
 SET ROLE us_booking_app;
 SET ROLE us_booking_owner;
 SELECT test_support.expect_error('T7 verified map row needs evidence and a verifier',
-  $q$INSERT INTO us_booking.country_map (oms_country_id, iso2, status) VALUES (8, 'US', 'verified')$q$,
+  $q$INSERT INTO us_booking.country_map (oms_country_id, iso2, status) VALUES (18, 'US', 'verified')$q$,
   'check constraint');
 SET ROLE us_booking_app;
 
 -- ============================================================================================
--- T4 Measurements: positive when supplied, complete and staff-confirmed before booking.
+-- T4 Measurements: positive when supplied, with units and a source, complete before booking.
 -- ============================================================================================
 SELECT test_support.expect_error('T4 zero length rejected',
-  $q$INSERT INTO us_booking.parcel (fulfilment_group_id, parcel_no, length_in) VALUES (test_support.gid(9001), 9, 0)$q$,
-  'parcel_length_in_check');
+  $q$INSERT INTO us_booking.parcel (fulfilment_group_id, parcel_no, length, width, height, dimension_unit, dimensions_source, measured_by, measured_at)
+     VALUES (test_support.gid(9001), 9, 0, 1, 1, 'in', 'staff', 'packer@example.test', now())$q$,
+  'parcel_length_check');
 SELECT test_support.expect_error('T4 negative weight rejected',
-  $q$INSERT INTO us_booking.parcel (fulfilment_group_id, parcel_no, weight_lb) VALUES (test_support.gid(9001), 9, -1)$q$,
-  'parcel_weight_lb_check');
+  $q$INSERT INTO us_booking.parcel (fulfilment_group_id, parcel_no, weight, weight_unit, weight_source, measured_by, measured_at)
+     VALUES (test_support.gid(9001), 9, -1, 'lb', 'staff', 'packer@example.test', now())$q$,
+  'parcel_weight_check');
 SELECT test_support.expect_error('T4 negative width rejected',
-  $q$INSERT INTO us_booking.parcel (fulfilment_group_id, parcel_no, width_in) VALUES (test_support.gid(9001), 9, -0.5)$q$,
-  'parcel_width_in_check');
+  $q$INSERT INTO us_booking.parcel (fulfilment_group_id, parcel_no, length, width, height, dimension_unit, dimensions_source, measured_by, measured_at)
+     VALUES (test_support.gid(9001), 9, 1, -0.5, 1, 'in', 'staff', 'packer@example.test', now())$q$,
+  'parcel_width_check');
+SELECT test_support.expect_error('T4 partial dimensions rejected',
+  $q$INSERT INTO us_booking.parcel (fulfilment_group_id, parcel_no, length, width) VALUES (test_support.gid(9001), 9, 10, 8)$q$,
+  'parcel_dimensions_complete');
+SELECT test_support.expect_error('T4 dimensions need a unit',
+  $q$INSERT INTO us_booking.parcel (fulfilment_group_id, parcel_no, length, width, height, dimensions_source, measured_by, measured_at)
+     VALUES (test_support.gid(9001), 9, 1, 1, 1, 'staff', 'packer@example.test', now())$q$,
+  'parcel_dimensions_complete');
+SELECT test_support.expect_error('T4 unknown dimension unit rejected',
+  $q$INSERT INTO us_booking.parcel (fulfilment_group_id, parcel_no, length, width, height, dimension_unit, dimensions_source, measured_by, measured_at)
+     VALUES (test_support.gid(9001), 9, 1, 1, 1, 'ft', 'staff', 'packer@example.test', now())$q$,
+  'parcel_dimension_unit_check');
 
--- Parcel 1 of group 9001: height missing, not staff-measured yet.
-INSERT INTO us_booking.parcel (fulfilment_group_id, parcel_no, length_in, width_in, weight_lb)
-VALUES (test_support.gid(9001), 1, 10, 8, 2.5);
+-- Parcel 1 of group 9001: staff-measured dimensions, weight not entered yet.
+INSERT INTO us_booking.parcel (fulfilment_group_id, parcel_no, length, width, height, dimension_unit, dimensions_source, measured_by, measured_at)
+VALUES (test_support.gid(9001), 1, 10, 8, 4, 'in', 'staff', 'packer@example.test', now());
 SELECT test_support.expect_error('T4 negative height on update rejected',
-  $q$UPDATE us_booking.parcel SET height_in = -2 WHERE id = test_support.pid(9001, 1)$q$,
-  'parcel_height_in_check');
+  $q$UPDATE us_booking.parcel SET height = -2 WHERE id = test_support.pid(9001, 1)$q$,
+  'parcel_height_check');
+SELECT test_support.expect_error('T4 staff-entered values must name who entered them',
+  $q$UPDATE us_booking.parcel SET measured_by = NULL, measured_at = NULL WHERE id = test_support.pid(9001, 1)$q$,
+  'parcel_measured_by_only_for_staff_values');
+SELECT test_support.expect_error('T4 profile source needs a recorded profile version',
+  $q$UPDATE us_booking.parcel SET dimensions_source = 'profile', measured_by = NULL, measured_at = NULL WHERE id = test_support.pid(9001, 1)$q$,
+  'parcel_profile_source_needs_profile');
 INSERT INTO us_booking.parcel_item (parcel_id, fulfilment_group_id, oms_order_id, oms_order_item_id, quantity) VALUES
   (test_support.pid(9001, 1), test_support.gid(9001), 9001, 90011, 2),
   (test_support.pid(9001, 1), test_support.gid(9001), 9001, 90012, 1);
@@ -155,16 +177,14 @@ SELECT test_support.expect_error('T5 cancelled parcel is final',
   'cancellation is final');
 
 -- Back to T4: completeness before booking.
-SELECT test_support.expect_error('T4 attempt rejected: height missing',
+SELECT test_support.expect_error('T4 attempt rejected: weight missing',
   $q$INSERT INTO us_booking.booking_attempt (parcel_id, fulfilment_group_id, provider, provider_account, attempt_generation, correlation_key, request_hash, requested_by)
      VALUES (test_support.pid(9001, 1), test_support.gid(9001), 'shippo', 'shippo-test-acct', 1, 'usb:oms:9001:g1:p1:a1', 'rh1', 'tester@example.test')$q$,
   'measurements are incomplete');
-UPDATE us_booking.parcel SET height_in = 4 WHERE id = test_support.pid(9001, 1);
-SELECT test_support.expect_error('T4 attempt rejected: measurements not staff-confirmed',
-  $q$INSERT INTO us_booking.booking_attempt (parcel_id, fulfilment_group_id, provider, provider_account, attempt_generation, correlation_key, request_hash, requested_by)
-     VALUES (test_support.pid(9001, 1), test_support.gid(9001), 'shippo', 'shippo-test-acct', 1, 'usb:oms:9001:g1:p1:a1', 'rh1', 'tester@example.test')$q$,
-  'not staff-confirmed');
-UPDATE us_booking.parcel SET measured_by = 'packer@example.test', measured_at = now() WHERE id = test_support.pid(9001, 1);
+SELECT test_support.expect_error('T4 weight needs a unit',
+  $q$UPDATE us_booking.parcel SET weight = 2.5, weight_source = 'staff' WHERE id = test_support.pid(9001, 1)$q$,
+  'parcel_weight_complete');
+UPDATE us_booking.parcel SET weight = 2.5, weight_unit = 'lb', weight_source = 'staff' WHERE id = test_support.pid(9001, 1);
 SELECT test_support.expect_error('T4 attempt rejected: contents not confirmed',
   $q$INSERT INTO us_booking.booking_attempt (parcel_id, fulfilment_group_id, provider, provider_account, attempt_generation, correlation_key, request_hash, requested_by)
      VALUES (test_support.pid(9001, 1), test_support.gid(9001), 'shippo', 'shippo-test-acct', 1, 'usb:oms:9001:g1:p1:a1', 'rh1', 'tester@example.test')$q$,
@@ -210,7 +230,7 @@ SELECT test_support.expect_error('T1 partial unique index blocks a second live a
 ROLLBACK;
 SET ROLE us_booking_app;
 SELECT test_support.expect_error('T1 measurements frozen while purchase pending',
-  $q$UPDATE us_booking.parcel SET weight_lb = 3 WHERE id = test_support.pid(9001, 1)$q$,
+  $q$UPDATE us_booking.parcel SET weight = 3 WHERE id = test_support.pid(9001, 1)$q$,
   'frozen');
 UPDATE us_booking.booking_attempt SET state = 'request_sent', sent_at = now() WHERE id = test_support.aid(9001, 1, 1);
 UPDATE us_booking.booking_attempt SET state = 'unknown', error_message = 'synthetic timeout' WHERE id = test_support.aid(9001, 1, 1);
@@ -360,10 +380,11 @@ SELECT test_support.expect_error('T3 sent request is frozen',
 -- T9 Scope, routing and requirements gate booking (Canada stays bookable).
 -- ============================================================================================
 -- Out-of-scope GB order (9004) and unverified Amazon routing (9005), each with a complete parcel.
-INSERT INTO us_booking.parcel (fulfilment_group_id, parcel_no, length_in, width_in, height_in, weight_lb, measured_by, measured_at)
-VALUES (test_support.gid(9004), 1, 6, 6, 6, 1, 'packer@example.test', now()),
-       (test_support.gid(9005), 1, 6, 6, 6, 1, 'packer@example.test', now()),
-       (test_support.gid(9002), 1, 12, 9, 5, 1.2, 'packer@example.test', now());
+INSERT INTO us_booking.parcel (fulfilment_group_id, parcel_no, length, width, height, dimension_unit, dimensions_source,
+                               weight, weight_unit, weight_source, measured_by, measured_at)
+VALUES (test_support.gid(9004), 1, 6, 6, 6, 'in', 'staff', 1, 'lb', 'staff', 'packer@example.test', now()),
+       (test_support.gid(9005), 1, 6, 6, 6, 'in', 'staff', 1, 'lb', 'staff', 'packer@example.test', now()),
+       (test_support.gid(9002), 1, 30, 23, 13, 'cm', 'staff', 0.55, 'kg', 'staff', 'packer@example.test', now());
 INSERT INTO us_booking.parcel_item (parcel_id, fulfilment_group_id, oms_order_id, oms_order_item_id, quantity) VALUES
   (test_support.pid(9004, 1), test_support.gid(9004), 9004, 90041, 1),
   (test_support.pid(9005, 1), test_support.gid(9005), 9005, 90051, 1),
@@ -424,7 +445,7 @@ SELECT test_support.expect_error('T3 label for an attempt still in created state
 -- ============================================================================================
 INSERT INTO us_booking.event_log (entity, entity_id, from_state, to_state, actor)
 VALUES ('booking_attempt', test_support.aid(9001, 1, 2), 'request_sent', 'succeeded', 'system:test');
-SELECT test_support.ok('T6 app can append to event_log', (SELECT count(*) FROM us_booking.event_log) = 1);
+SELECT test_support.ok('T6 app can append to event_log', (SELECT count(*) FROM us_booking.event_log WHERE actor = 'system:test') = 1);
 SELECT test_support.expect_error('T6 app UPDATE rejected',   $q$UPDATE us_booking.event_log SET actor = 'x'$q$, 'permission denied');
 SELECT test_support.expect_error('T6 app DELETE rejected',   $q$DELETE FROM us_booking.event_log$q$, 'permission denied');
 SELECT test_support.expect_error('T6 app TRUNCATE rejected', $q$TRUNCATE us_booking.event_log$q$, 'permission denied');
@@ -433,7 +454,8 @@ SELECT test_support.expect_error('T6 even the owner cannot UPDATE',   $q$UPDATE 
 SELECT test_support.expect_error('T6 even the owner cannot DELETE',   $q$DELETE FROM us_booking.event_log$q$, 'append-only');
 SELECT test_support.expect_error('T6 even the owner cannot TRUNCATE', $q$TRUNCATE us_booking.event_log$q$, 'append-only');
 RESET ROLE;
-SELECT test_support.ok('T6 event_log row intact', (SELECT actor FROM us_booking.event_log) = 'system:test');
+SELECT test_support.ok('T6 event_log rows intact (the test row and the two 0006 rows)',
+  (SELECT array_agg(actor ORDER BY id) FROM us_booking.event_log) = '{migration:0006,migration:0006,system:test}');
 
 -- ============================================================================================
 -- T10 Single-role operation (approved setup: the owner login is also the runtime login).
@@ -450,10 +472,12 @@ SELECT test_support.expect_error('T10 owner: second purchase while a label is ac
      VALUES (test_support.pid(9001, 1), test_support.gid(9001), 'shippo', 'shippo-test-acct', 9, 'usb:owner-dup', 'rh1', 'tester@example.test')$q$,
   'already has a pending');
 SELECT test_support.expect_error('T10 owner: booked parcel measurements frozen',
-  $q$UPDATE us_booking.parcel SET weight_lb = 9 WHERE id = test_support.pid(9001, 1)$q$,
+  $q$UPDATE us_booking.parcel SET weight = 9 WHERE id = test_support.pid(9001, 1)$q$,
   'frozen|locked');
 SELECT test_support.expect_error('T10 owner: zero dimension rejected',
-  $q$INSERT INTO us_booking.package_profile (name, length_in, width_in, height_in) VALUES ('owner-zero', 0, 1, 1)$q$,
+  $q$WITH p AS (INSERT INTO us_booking.package_profile (name) VALUES ('owner-zero') RETURNING id)
+     INSERT INTO us_booking.package_profile_version (profile_id, version, length, width, height, dimension_unit, approved_by)
+     SELECT id, 1, 0, 1, 1, 'in', 'owner@example.test' FROM p$q$,
   'check constraint');
 SELECT test_support.expect_error('T10 owner: event_log UPDATE rejected', $q$UPDATE us_booking.event_log SET actor = 'x'$q$, 'append-only');
 SELECT test_support.ok('T10 limitation: owner holds UPDATE/DELETE on event_log (only the trigger stops it)',

@@ -37,7 +37,8 @@ INSERT INTO order_management.flag VALUES (15, 'Book from US', 3), (8, 'Book from
 -- 5002 eBay, no country_id, blank state, no phone, combo line with a missing component row,
 --      cancellation requested.
 -- 5003 Shopify merge parent with children 5004 and 5005; a pack line with consistent components.
--- 5006 Wayfair, status New, unmapped country_id 359, flagged "Book from UK".
+-- 5006 Wayfair, status New, country_id 359 (verified Canada, migration 0006), flagged "Book from UK".
+-- Country ids: 8 and 359 are the verified mappings from 0006; 9008 is a synthetic id with no mapping.
 -- 5007 eBay, status Hold, Completed shipment with tracking, blank real_sku.
 -- 5011 Shopify single order (merged later, in the changes stage); combo_count 1 with 2 component rows.
 -- Excluded: 5008 Completed, 5009 warehouse 7, 5010 RESEND source.
@@ -89,12 +90,12 @@ INSERT INTO customers.shipping_address
   (order_id, address_name, company, address_line_1, address_line_2, address_line_3, region, city, postcode, country_id, phone) VALUES
   (5001, 'Synthetic A', NULL, '1 Test St', NULL, NULL, 'TX', 'Testville',  '73301', 8,    '5550001'),
   (5002, 'Synthetic B', NULL, '2 Test St', NULL, NULL, '',   'Testburg',   '10001', NULL, NULL),
-  (5003, 'Synthetic C', NULL, '3 Test St', NULL, NULL, 'NY', 'Testford',   '10002', 8,    '5550003'),
-  (5004, 'Synthetic C', NULL, '3 Test St', NULL, NULL, 'NY', 'Testford',   '10002', 8,    '5550003'),
-  (5005, 'Synthetic C', NULL, '3 Test St', NULL, NULL, 'NY', 'Testford',   '10002', 8,    '5550003'),
+  (5003, 'Synthetic C', NULL, '3 Test St', NULL, NULL, 'NY', 'Testford',   '10002', 9008, '5550003'),
+  (5004, 'Synthetic C', NULL, '3 Test St', NULL, NULL, 'NY', 'Testford',   '10002', 9008, '5550003'),
+  (5005, 'Synthetic C', NULL, '3 Test St', NULL, NULL, 'NY', 'Testford',   '10002', 9008, '5550003'),
   (5006, 'Synthetic F', NULL, '6 Test St', NULL, NULL, 'ON', 'Testtown',   'K1A0B1', 359, '5550006'),
-  (5007, 'Synthetic G', NULL, '7 Test St', NULL, NULL, 'CA', 'Testcity',   '90001', 8,    '5550007'),
-  (5011, 'Synthetic H', NULL, '11 Test St', NULL, NULL, 'WA', 'Testshire', '98001', 8,    '5550011');
+  (5007, 'Synthetic G', NULL, '7 Test St', NULL, NULL, 'CA', 'Testcity',   '90001', 9008, '5550007'),
+  (5011, 'Synthetic H', NULL, '11 Test St', NULL, NULL, 'WA', 'Testshire', '98001', 9008, '5550011');
 
 INSERT INTO customers.customer_info (order_id, email) VALUES
   (5001, 'a@example.test'), (5002, 'b@example.test'), (5003, 'c@example.test'), (5006, 'f@example.test'),

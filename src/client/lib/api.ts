@@ -1,7 +1,8 @@
 'use client';
 
 import {useMutation, useQuery, useQueryClient} from '@tanstack/react-query';
-import type {GroupDetail, QueueResponse, StatusResponse, SyncJob, SyncStatusResponse} from '@/shared/types';
+import type {GroupDetail, PackageProfilesResponse, QueueResponse, StatusResponse, SyncJob, SyncStatusResponse} from '@/shared/types';
+import type {ActionInput, ActionKey} from '@/shared/actions';
 
 export class ApiError extends Error {
   constructor(message: string, public status: number) {
@@ -60,5 +61,32 @@ export function useStartSync() {
       return body.job as SyncJob;
     },
     onSettled: () => qc.invalidateQueries({queryKey: ['sync']}),
+  });
+}
+
+export function usePackageProfiles() {
+  return useQuery({queryKey: ['package-profiles'], queryFn: () => getJson<PackageProfilesResponse>('/api/package-profiles')});
+}
+
+// One staff action (POST /api/actions/<key>). Afterwards every view that could show the change is
+// refreshed from the database; nothing is updated optimistically.
+export function useAction<K extends ActionKey>(key: K) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: ActionInput<K>): Promise<Record<string, unknown>> => {
+      const res = await fetch(`/api/actions/${key}`, {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(input),
+      }).catch(() => {
+        throw new ApiError('The local server is not reachable', 0);
+      });
+      const body = await res.json().catch(() => null);
+      if (!res.ok) throw new ApiError(body?.error ?? `The action failed (${res.status})`, res.status);
+      return body.result;
+    },
+    onSettled: () => Promise.all([
+      qc.invalidateQueries({queryKey: ['group']}),
+      qc.invalidateQueries({queryKey: ['queue']}),
+      qc.invalidateQueries({queryKey: ['package-profiles']}),
+    ]),
   });
 }

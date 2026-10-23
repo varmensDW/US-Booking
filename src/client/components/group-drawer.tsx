@@ -4,12 +4,15 @@ import * as React from 'react';
 import {motion} from 'motion/react';
 import {
   Ban, Boxes, ChevronDown, CircleCheck, CircleDashed, ClipboardList, Eye, EyeOff, FileText, GitMerge, Info, MapPin,
-  PackageCheck, PackageOpen, Route, ShieldAlert, Truck, type LucideIcon,
+  Route, ShieldAlert, Truck,
 } from 'lucide-react';
 import {Sheet, SheetContent, SheetDescription, SheetTitle} from '@/client/components/ui/sheet';
 import {Badge} from '@/client/components/ui/badge';
 import {Skeleton} from '@/client/components/ui/skeleton';
-import {ChannelBadge, CopyButton, CountryFlag, ErrorState, IconTile, NotConfirmed, type TileTone} from '@/client/components/bits';
+import {ChannelBadge, CopyButton, CountryFlag, ErrorState, IconTile, NotConfirmed, Section} from '@/client/components/bits';
+import {ParcelSection} from '@/client/components/parcel-prep';
+import {CaseCloseForm, DestinationConfirmForm, RevokeConfirmation} from '@/client/components/review-actions';
+import {StaffBar} from '@/client/lib/staff';
 import {useGroupDetail, useStatus} from '@/client/lib/api';
 import {
   CASE_LABELS, CASE_TONE, confirmedIso2, countryName, customsState, omsStatusLabel, PROVIDERS, REQUIREMENT_LABELS,
@@ -18,18 +21,6 @@ import {
 import {formatOmsRaw, formatTimestamp, OMS_TIME_NOTE} from '@/client/lib/format';
 import type {DetailOrder, GroupDetail, QueueGroup, Requirement} from '@/shared/types';
 
-function Section({icon, tone, title, children, aside}: {icon: LucideIcon; tone: TileTone; title: string; children: React.ReactNode; aside?: React.ReactNode}) {
-  return (
-    <section className="rounded-2xl border border-line bg-surface p-4 shadow-card sm:p-5" aria-label={title}>
-      <div className="mb-3 flex items-center gap-3">
-        <IconTile icon={icon} tone={tone} size="sm" />
-        <h3 className="flex-1 text-sm font-semibold text-ink">{title}</h3>
-        {aside}
-      </div>
-      {children}
-    </section>
-  );
-}
 
 const ROLE_LABEL = {single: 'Single order', merge_parent: 'Main order (merge parent)', merge_child: 'Merged order'} as const;
 
@@ -90,8 +81,12 @@ function DestinationSection({orders}: {orders: DetailOrder[]}) {
               </div>
               <p className="mt-2 text-xs text-muted">
                 {iso
-                  ? o.destination.source === 'country_map' ? 'Confirmed by a verified country mapping.' : 'Confirmed by staff with evidence for this address.'
-                  : <>Raw OMS country id {o.destination.oms_country_id ?? 'missing'} is not interpreted. The destination is not inferred from the US1 warehouse or the marketplace.</>}
+                  ? o.destination.source === 'country_map'
+                    ? `Resolved automatically: OMS country id ${o.destination.oms_country_id} is a verified mapping (${countryName(iso)}). No confirmation needed.`
+                    : 'Confirmed by staff with evidence for this address.'
+                  : o.destination.source === 'conflict'
+                    ? 'The verified country mapping and the staff confirmation disagree. Revoke the confirmation if it is wrong.'
+                    : <>{o.destination.oms_country_id == null ? 'The OMS has no country id for this ship-to' : `OMS country id ${o.destination.oms_country_id} has no verified mapping`}, so staff must confirm this destination. It is not inferred from the US1 warehouse or the marketplace.</>}
               </p>
               {o.destination.stale && <p className="mt-1 text-xs text-review">A confirmation exists for an earlier address and no longer applies.</p>}
               {o.confirmations.length > 0 && (
@@ -100,12 +95,15 @@ function DestinationSection({orders}: {orders: DetailOrder[]}) {
                     <li key={c.id} className="flex flex-wrap items-center gap-1.5">
                       <Badge tone={c.valid_for_current_address ? 'success' : 'neutral'}>{c.status === 'revoked' ? 'Revoked' : c.valid_for_current_address ? 'Valid' : 'Not valid for current address'}</Badge>
                       <span className="text-muted">{countryName(c.destination_iso2)} · {c.evidence_type.replaceAll('_', ' ')} · {c.confirmed_by}, {formatTimestamp(c.confirmed_at)}</span>
+                      {c.status === 'active' && <span className="w-full text-muted">Evidence: {c.evidence_ref}</span>}
                       {c.revoke_reason && <span className="text-muted">— {c.revoke_reason}</span>}
+                      {c.status === 'active' && <RevokeConfirmation order={o} confirmationId={c.id} />}
                     </li>
                   ))}
                 </ul>
               )}
               {!active && !iso && <p className="mt-1 text-xs text-muted">No staff confirmation recorded yet.</p>}
+              {o.destination.source === 'unresolved' && <DestinationConfirmForm order={o} />}
               {showAddress && (
                 <address className="mt-2 rounded-lg bg-canvas px-3 py-2 text-xs not-italic leading-relaxed text-ink">
                   {[o.ship.name, o.ship.company, o.ship.line1, o.ship.line2, o.ship.line3].filter(Boolean).map((l, i) => <span key={i} className="block">{l}</span>)}
@@ -182,34 +180,6 @@ function ItemsSection({detail}: {detail: GroupDetail}) {
           </tbody>
         </table>
       </div>
-    </Section>
-  );
-}
-
-function ParcelsSection({detail}: {detail: GroupDetail}) {
-  return (
-    <Section icon={PackageCheck} tone="teal" title="Confirmed parcel contents">
-      {detail.parcels.length === 0 ? (
-        <div className="flex items-start gap-3 rounded-xl border border-dashed border-line-strong bg-canvas px-4 py-3 text-sm text-muted">
-          <PackageOpen aria-hidden className="mt-0.5 size-4 shrink-0 text-subtle" />
-          <p>No parcels created and no contents confirmed yet. The ordered items above are not parcel contents until staff confirm them.</p>
-        </div>
-      ) : (
-        <ul className="space-y-2">
-          {detail.parcels.map(p => (
-            <li key={p.id} className="rounded-xl border border-line px-3 py-2 text-sm">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-medium text-ink">Parcel {p.parcel_no}</span>
-                <Badge tone={p.contents_status === 'confirmed' ? 'success' : 'review'}>{p.contents_status === 'confirmed' ? 'Contents confirmed' : 'Contents not confirmed'}</Badge>
-                <Badge tone={p.measured ? 'success' : 'review'}>{p.measured ? 'Measured' : 'Not measured'}</Badge>
-              </div>
-              <p className="mt-1 text-xs text-muted">
-                {p.items.length ? p.items.map(i => `${detail.lines.find(l => l.oms_order_item_id === i.oms_order_item_id)?.item_sku ?? i.oms_order_item_id} × ${i.quantity}`).join(', ') : 'No items allocated'}
-              </p>
-            </li>
-          ))}
-        </ul>
-      )}
     </Section>
   );
 }
@@ -330,6 +300,7 @@ function FindingsSection({detail}: {detail: GroupDetail}) {
                 {c.details.recurrence_of ? ` · recurrence of finding ${String(c.details.recurrence_of)}` : ''}
               </p>
               {c.status !== 'open' && <p className="mt-1 text-xs text-muted">{c.status === 'resolved' ? 'Resolved' : 'Dismissed'} by {c.resolved_by}, {formatTimestamp(c.resolved_at)}: {c.resolution}</p>}
+              {c.status === 'open' && <CaseCloseForm c={c} />}
             </li>
           ))}
         </ul>
@@ -364,12 +335,13 @@ function DrawerBody({detail}: {detail: GroupDetail}) {
     <div className="space-y-4">
       <div className="flex items-start gap-3 rounded-xl border border-line bg-surface px-4 py-3 text-sm text-muted">
         <Ban aria-hidden className="mt-0.5 size-4 shrink-0 text-subtle" />
-        <p><span className="font-medium text-ink">Purchase and print are not available</span> in this phase. Live booking is switched off and this screen is read-only.</p>
+        <p><span className="font-medium text-ink">Purchase and print are not available</span> in this phase (live booking is off). You can prepare parcels and record review decisions; none of them makes an order eligible for purchase on its own.</p>
       </div>
+      <StaffBar />
       <OrdersSection orders={detail.orders} />
       <DestinationSection orders={detail.orders} />
       <ItemsSection detail={detail} />
-      <ParcelsSection detail={detail} />
+      <ParcelSection detail={detail} />
       <EvidenceSection orders={detail.orders} />
       <RequirementsSection detail={detail} />
       <FindingsSection detail={detail} />

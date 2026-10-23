@@ -158,3 +158,28 @@ export function StaleBanner({message, dataTime}: {message: string; dataTime: str
     </div>
   );
 }
+
+// A titled panel in the order drawer.
+export function Section({icon, tone, title, children, aside}: {icon: LucideIcon; tone: TileTone; title: string; children: React.ReactNode; aside?: React.ReactNode}) {
+  return (
+    <section className="rounded-2xl border border-line bg-surface p-4 shadow-card sm:p-5" aria-label={title}>
+      <div className="mb-3 flex items-center gap-3">
+        <IconTile icon={icon} tone={tone} size="sm" />
+        <h3 className="flex-1 text-sm font-semibold text-ink">{title}</h3>
+        {aside}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+// The database's explanation when a staff action is refused (stale data, a lock, invalid input).
+export function ActionMessage({error}: {error: Error | null}) {
+  if (!error) return null;
+  return (
+    <div role="alert" className="flex items-start gap-2 rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-xs text-danger">
+      <AlertTriangle aria-hidden className="mt-0.5 size-3.5 shrink-0" />
+      <p>{error.message}</p>
+    </div>
+  );
+}

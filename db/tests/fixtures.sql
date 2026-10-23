@@ -17,15 +17,15 @@ INSERT INTO us_booking.oms_order
    ship_name, ship_line1, ship_city, ship_region, ship_postcode, oms_country_id, ship_address_hash, source_hash)
 VALUES
   (9001, 'SYN-EBAY-0001', 2, 'EBAY',    22,  'syn-ebay',    32, '{Book from US}', 'Inprogress', '2026-10-21 23:30:00',
-   'Test Recipient A', '1 Example St', 'Testville', 'CA', '90001', 8,  'addr-9001', 'src-9001'),
+   'Test Recipient A', '1 Example St', 'Testville', 'CA', '90001', 1008, 'addr-9001', 'src-9001'),
   (9002, 'SYN-SHOP-0002', 3, 'SHOPIFY', 245, 'syn-shopify', 32, '{Book from US}', 'Inprogress', '2026-10-21 23:45:00',
    'Test Recipient B', '2 Example Ave', 'Testburg', 'ON', 'K1A 0B1', 12, 'addr-9002', 'src-9002'),
   (9003, 'SYN-EBAY-0003', 2, 'EBAY',    22,  'syn-ebay',    32, '{Book from US}', 'Inprogress', '2026-10-22 00:10:00',
-   'Test Recipient C', '3 Example Rd', 'Testford', 'NY', '10001', 8,  'addr-9003', 'src-9003'),
+   'Test Recipient C', '3 Example Rd', 'Testford', 'NY', '10001', 1008, 'addr-9003', 'src-9003'),
   (9004, 'SYN-SHOP-0004', 3, 'SHOPIFY', 245, 'syn-shopify', 32, '{Book from US}', 'Inprogress', '2026-10-22 00:20:00',
    'Test Recipient D', '4 Example Ln', 'Testham', NULL, 'TE1 1ST', 197, 'addr-9004', 'src-9004'),
   (9005, 'SYN-AMZ-0005',  1, 'AMAZON',  239, 'syn-amazon',  32, '{Book from US}', 'Inprogress', '2026-10-22 00:30:00',
-   'Test Recipient E', '5 Example Ct', 'Testdale', 'TX', '73301', 8,  'addr-9005', 'src-9005');
+   'Test Recipient E', '5 Example Ct', 'Testdale', 'TX', '73301', 1008, 'addr-9005', 'src-9005');
 
 INSERT INTO us_booking.oms_order_item
   (oms_order_item_id, oms_order_id, container_order_id, line_item_id, item_sku, real_sku,
@@ -42,15 +42,16 @@ VALUES
 INSERT INTO us_booking.oms_order_item_component (oms_combo_id, oms_order_item_id, component_sku, component_qty) VALUES
   (1, 90012, 'SYN-PART-X', 1), (2, 90012, 'SYN-PART-Y', 1);
 
--- Per-order destination confirmations (country_map stays empty).
+-- Per-order destination confirmations. The country ids above (1008, 12, 197) are synthetic and have
+-- no verified mapping; the mapped ids 8 and 359 (migration 0006) are tested in tests_actions.sql.
 INSERT INTO us_booking.order_destination_confirmation
   (oms_order_id, destination_iso2, evidence_type, evidence_ref, oms_country_id_seen, ship_address_hash, confirmed_by)
 VALUES
-  (9001, 'US', 'marketplace_order_record', 'synthetic: eBay order page shows US', 8,   'addr-9001', 'tester@example.test'),
+  (9001, 'US', 'marketplace_order_record', 'synthetic: eBay order page shows US', 1008, 'addr-9001', 'tester@example.test'),
   (9002, 'CA', 'marketplace_order_record', 'synthetic: Shopify order shows CA',   12,  'addr-9002', 'tester@example.test'),
-  (9003, 'US', 'marketplace_order_record', 'synthetic: eBay order page shows US', 8,   'addr-9003', 'tester@example.test'),
+  (9003, 'US', 'marketplace_order_record', 'synthetic: eBay order page shows US', 1008, 'addr-9003', 'tester@example.test'),
   (9004, 'GB', 'marketplace_order_record', 'synthetic: Shopify order shows GB',   197, 'addr-9004', 'tester@example.test'),
-  (9005, 'US', 'marketplace_order_record', 'synthetic: Amazon order shows US',    8,   'addr-9005', 'tester@example.test');
+  (9005, 'US', 'marketplace_order_record', 'synthetic: Amazon order shows US',    1008, 'addr-9005', 'tester@example.test');
 
 INSERT INTO us_booking.fulfilment_group (group_key, provider, provider_account, warehouse_id, state) VALUES
   ('oms:9001:g1', 'shippo',                'shippo-test-acct', 32, 'ready'),

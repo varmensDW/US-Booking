@@ -143,6 +143,9 @@ export function reviewItems(g: QueueGroup): ReviewItem[] {
     items.push({key: `case:${type}`, label: CASE_LABELS[type] ?? type, tone: CASE_TONE[type] ?? 'review', kind: 'finding',
                 ...(n > 1 ? {label: `${CASE_LABELS[type] ?? type} ×${n}`} : {})});
   }
+  if (g.open_discrepancies > 0) {
+    items.push({key: 'contents:stale', label: 'Parcel contents need reconciliation', tone: 'danger', kind: 'finding'});
+  }
   const unmetBy = (req: string) => g.unmet.filter(r => r.requirement === req);
   const dest = groupDestination(g);
   if (dest.kind !== 'confirmed' && dest.kind !== 'mixed') {
@@ -189,3 +192,33 @@ export function requirementSort(a: Requirement, b: Requirement) {
   const order = ['unmet', 'met', 'not_applicable'];
   return order.indexOf(a.status) - order.indexOf(b.status) || a.requirement.localeCompare(b.requirement);
 }
+
+// Measurements are shown exactly as stored, in their own unit; nothing is converted.
+export function formatMeasure(n: number | string | null | undefined): string {
+  if (n == null || n === '') return '';
+  const v = Number(n);
+  return Number.isFinite(v) ? String(Number(v.toFixed(3))) : String(n);
+}
+export const UNIT_LABELS: Record<string, string> = {in: 'in', cm: 'cm', lb: 'lbs', kg: 'kg', oz: 'oz', g: 'g'};
+export function unitLabel(u: string | null | undefined): string {
+  return u ? UNIT_LABELS[u] ?? u : '';
+}
+export function formatDimensions(l: number | null, w: number | null, h: number | null, unit: string | null): string {
+  if (l == null || w == null || h == null) return 'Not entered';
+  return `${formatMeasure(l)} × ${formatMeasure(w)} × ${formatMeasure(h)} ${unitLabel(unit)}`;
+}
+export function formatWeight(v: number | null | undefined, unit: string | null | undefined): string {
+  return v == null ? 'Not entered' : `${formatMeasure(v)} ${unitLabel(unit)}`;
+}
+
+export const ASSIGNMENTS: Record<string, {label: string; detail: string}> = {
+  us1_shippo: {label: 'US1 Shippo orders', detail: 'Shopify and eBay orders shipped from US1 through Shippo'},
+  us1_amazon: {label: 'US1 Amazon orders', detail: 'Amazon orders shipped from US1 through Seller Central'},
+};
+
+export const EVIDENCE_LABELS: Record<string, string> = {
+  marketplace_order_record: 'Marketplace order record',
+  customer_confirmation: 'Customer confirmation',
+  carrier_address_validation: 'Carrier address validation',
+  other: 'Other',
+};

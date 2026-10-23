@@ -4,6 +4,7 @@ import * as React from 'react';
 import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
 import {MotionConfig} from 'motion/react';
 import {TooltipProvider} from '@/client/components/ui/tooltip';
+import {StaffProvider} from '@/client/lib/staff';
 
 export function Providers({children}: {children: React.ReactNode}) {
   const [client] = React.useState(() => new QueryClient({
@@ -20,7 +21,7 @@ export function Providers({children}: {children: React.ReactNode}) {
     <QueryClientProvider client={client}>
       {/* Motion follows the operating-system reduced-motion setting. */}
       <MotionConfig reducedMotion="user" transition={{duration: 0.2}}>
-        <TooltipProvider delayDuration={250}>{children}</TooltipProvider>
+        <TooltipProvider delayDuration={250}><StaffProvider>{children}</StaffProvider></TooltipProvider>
       </MotionConfig>
     </QueryClientProvider>
   );

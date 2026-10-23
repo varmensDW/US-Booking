@@ -39,25 +39,38 @@ SELECT test_support.ok('S3 no parcels, contents or allocations inferred',
 SELECT test_support.ok('S3 raw order date unchanged',
   (SELECT order_date_raw FROM us_booking.oms_order WHERE oms_order_id = 5004) = timestamp '2026-10-03 09:00:00');
 
--- Country: never guessed
-SELECT test_support.ok('S3 country map untouched and no confirmations created',
-  (SELECT count(*) FROM us_booking.country_map) = 0 AND (SELECT count(*) FROM us_booking.order_destination_confirmation) = 0);
+-- Country: only verified mappings (0006: 8 -> US, 359 -> CA); nothing guessed
+SELECT test_support.ok('S3 country map holds only the two verified rows from 0006; no confirmations created',
+  (SELECT array_agg(oms_country_id || ':' || iso2 || ':' || status ORDER BY oms_country_id) FROM us_booking.country_map) = '{8:US:verified,359:CA:verified}'
+  AND (SELECT count(*) FROM us_booking.order_destination_confirmation) = 0);
+SELECT test_support.ok('S3 verified country id 8 resolves to US through the map',
+  (SELECT destination_iso2 = 'US' AND destination_source = 'country_map' AND scope_status = 'in_scope'
+     FROM us_booking.v_order_scope WHERE oms_order_id = 5001));
+SELECT test_support.ok('S3 verified country id 359 resolves to Canada through the map',
+  (SELECT destination_iso2 = 'CA' AND destination_source = 'country_map' FROM us_booking.v_order_scope WHERE oms_order_id = 5006));
+SELECT test_support.ok('S3 mapped orders need no per-order confirmation (destination requirement met)',
+  (SELECT bool_and(status = 'met' AND detail LIKE '%via country_map') FROM us_booking.shipment_requirement
+    WHERE oms_order_id IN (5001, 5006) AND requirement = 'destination_country'));
+SELECT test_support.ok('S3 mapped US: customs not applicable',
+  (SELECT status FROM us_booking.shipment_requirement WHERE oms_order_id = 5001 AND requirement = 'customs_declaration') = 'not_applicable');
+SELECT test_support.ok('S3 mapped Canada: customs declaration required',
+  (SELECT status = 'unmet' AND detail LIKE 'Canada destination%' FROM us_booking.shipment_requirement
+    WHERE oms_order_id = 5006 AND requirement = 'customs_declaration'));
 SELECT test_support.ok('S3 missing country stays undetermined',
   (SELECT oms_country_id IS NULL FROM us_booking.oms_order WHERE oms_order_id = 5002)
   AND (SELECT scope_status FROM us_booking.v_order_scope WHERE oms_order_id = 5002) = 'undetermined');
 SELECT test_support.ok('S3 missing country is a visible unmet requirement',
   (SELECT status = 'unmet' AND detail LIKE '%no country_id%' FROM us_booking.shipment_requirement
     WHERE oms_order_id = 5002 AND requirement = 'destination_country'));
-SELECT test_support.ok('S3 unmapped country id 359 is unmet, not guessed',
-  (SELECT status = 'unmet' AND detail LIKE '%359%' FROM us_booking.shipment_requirement
-    WHERE oms_order_id = 5006 AND requirement = 'destination_country'));
-SELECT test_support.ok('S3 country id 8 is not assumed to be US either',
-  (SELECT scope_status FROM us_booking.v_order_scope WHERE oms_order_id = 5001) = 'undetermined');
+SELECT test_support.ok('S3 unmapped country id 9008 is unmet, not guessed',
+  (SELECT status = 'unmet' AND detail LIKE '%9008%' FROM us_booking.shipment_requirement
+    WHERE oms_order_id = 5007 AND requirement = 'destination_country')
+  AND (SELECT scope_status FROM us_booking.v_order_scope WHERE oms_order_id = 5007) = 'undetermined');
 SELECT test_support.ok('S3 blank state is unmet', (SELECT status FROM us_booking.shipment_requirement
     WHERE oms_order_id = 5002 AND requirement = 'ship_to_state') = 'unmet');
 SELECT test_support.ok('S3 customs awaits destination while it is unknown (still blocking)',
   (SELECT status = 'unmet' AND detail LIKE 'awaiting destination confirmation%' FROM us_booking.shipment_requirement
-    WHERE oms_order_id = 5001 AND requirement = 'customs_declaration'));
+    WHERE oms_order_id = 5002 AND requirement = 'customs_declaration'));
 SELECT test_support.ok('S3 OMS shipment evidence stored with the order',
   (SELECT (oms_shipments->>'tracked_not_cancelled')::int = 1 FROM us_booking.oms_order WHERE oms_order_id = 5007));
 

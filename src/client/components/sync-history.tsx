@@ -66,7 +66,7 @@ export function SyncHistory() {
         <div className="flex items-center gap-3 border-b border-line px-5 py-4">
           <IconTile icon={History} tone="teal" size="sm" />
           <h2 className="text-sm font-semibold text-ink">Recorded sync runs</h2>
-          <span className="text-xs text-muted">Committed imports only; dry runs are rolled back and leave no record. Times shown in your time zone.</span>
+          <span className="text-xs text-muted">Committed imports and failed import attempts (kept even though the import itself was rolled back); dry runs leave no record. Times shown in your time zone.</span>
         </div>
         {runs.length === 0 ? <EmptyState title="No sync has been recorded yet" /> : (
           <div className="overflow-x-auto">

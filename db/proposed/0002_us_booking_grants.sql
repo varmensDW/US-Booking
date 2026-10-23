@@ -69,3 +69,40 @@ TO us_booking_app;
 
 -- Trigger/helper functions are called by triggers, not by the app directly.
 REVOKE EXECUTE ON FUNCTION us_booking.adjust_allocation(bigint, integer) FROM PUBLIC;
+
+-- Added with 0007/0008 (package profiles and staff actions). Profile versions are append-only;
+-- assignments are changed through us_booking.staff_profile_assign. Staff actions are plain
+-- (SECURITY INVOKER) functions, so a separate runtime role also needs EXECUTE on them.
+GRANT SELECT ON us_booking.package_profile_version, us_booking.package_profile_assignment,
+  us_booking.v_order_item_allocation TO us_booking_app;
+GRANT INSERT ON us_booking.package_profile_version TO us_booking_app;
+GRANT UPDATE ON us_booking.package_profile_assignment TO us_booking_app;
+GRANT DELETE ON us_booking.parcel TO us_booking_app;
+GRANT EXECUTE ON FUNCTION
+  us_booking.staff_profile_save(jsonb), us_booking.staff_profile_assign(jsonb),
+  us_booking.staff_parcel_create(jsonb), us_booking.staff_parcel_measure(jsonb), us_booking.staff_parcel_set_contents(jsonb),
+  us_booking.staff_parcel_confirm_contents(jsonb), us_booking.staff_parcel_remove(jsonb),
+  us_booking.staff_destination_confirm(jsonb), us_booking.staff_destination_revoke(jsonb), us_booking.staff_case_close(jsonb),
+  us_booking.staff_actor(jsonb), us_booking.staff_id(jsonb, text), us_booking.staff_measure(jsonb, text, text),
+  us_booking.staff_text(jsonb, text, text, integer, integer), us_booking.staff_parcel_for_edit(jsonb),
+  us_booking.parcel_snapshot(us_booking.parcel), us_booking.parcel_requirements_refresh(bigint, text),
+  us_booking.destination_requirements_refresh(bigint, text), us_booking.sync_record_failure(jsonb)
+TO us_booking_app;
+
+-- Added with 0009 (parcel contents revalidation). Discrepancies are kept as history: no DELETE.
+GRANT SELECT, INSERT, UPDATE ON us_booking.parcel_contents_discrepancy TO us_booking_app;
+GRANT USAGE ON us_booking.parcel_contents_discrepancy_id_seq TO us_booking_app;
+GRANT EXECUTE ON FUNCTION
+  us_booking.parcel_contents_basis(bigint), us_booking.group_allocation_problems(bigint),
+  us_booking.parcel_contents_changes(jsonb, jsonb), us_booking.parcel_contents_revalidate(bigint, text, bigint),
+  us_booking.staff_discrepancy_acknowledge(jsonb)
+TO us_booking_app;
+
+-- Added with 0010 (Wayfair sandbox records; written only through the wayfair_sandbox_* functions).
+GRANT SELECT, INSERT, UPDATE ON us_booking.wayfair_sandbox_registration TO us_booking_app;
+GRANT SELECT, INSERT ON us_booking.wayfair_sandbox_label TO us_booking_app;
+GRANT USAGE ON us_booking.wayfair_sandbox_registration_id_seq, us_booking.wayfair_sandbox_label_id_seq TO us_booking_app;
+GRANT EXECUTE ON FUNCTION
+  us_booking.wayfair_sandbox_begin(jsonb), us_booking.wayfair_sandbox_finish(jsonb), us_booking.wayfair_sandbox_record_existing(jsonb),
+  us_booking.wayfair_sandbox_resolve(jsonb), us_booking.wayfair_sandbox_label_add(jsonb)
+TO us_booking_app;

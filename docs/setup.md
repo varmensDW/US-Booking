@@ -118,6 +118,11 @@ Applied on 2026-10-23:
 | 0003 | `0003_oms_sync.sql` | OMS snapshot import function `oms_sync_apply()`, its helpers, and the `v_review_queue` view |
 | 0004 | `0004_oms_sync_combo_rule.sql` | Replaces `oms_sync_apply()` with the verified combo-mismatch rule (§3b) |
 | 0005 | `0005_oms_sync_revalidation.sql` | Revokes confirmations when the address changes, invalidates outdated staff checks (`basis_hash`), reopens recurring findings, applies customs by destination, and stores OMS shipment/cancellation evidence |
+| 0006 | `0006_country_map_oms_confirmed.sql` | Verified country map rows: 8 → US, 359 → CA (stops instead of replacing a conflicting row) (§3d) |
+| 0007 | `0007_package_profiles_parcel_units.sql` | Versioned package profiles and route defaults; parcel units and value source; booking precondition accepts default-profile values (§3d) |
+| 0008 | `0008_staff_review_actions.sql` | Staff actions (profiles, parcels, destination exceptions, findings) and failed-sync records (§3d) |
+| 0010 | `0010_wayfair_sandbox.sql` | Wayfair sandbox registration and label records, isolated from live booking (§3e) |
+| 0009 | `0009_parcel_contents_revalidation.sql` | Parcel contents confirmations revalidated by the sync; discrepancies; booking checks the confirmation basis (§3d) |
 
 Verified after applying 0001–0002:
 
@@ -129,7 +134,7 @@ Verified after applying 0001–0002:
 
 ### Single-role setup: what still holds and what does not
 
-The local suite (`db/tests`, 106 checks) proves the design with a **separate** DML-only runtime role (T0–T9), plus owner-level checks (T10).
+The local suite (`db/tests`, 186 checks) proves the design with a **separate** DML-only runtime role (T0–T9), plus owner-level checks (T10).
 
 **Still enforced when the app connects as the owner**, because constraints, unique indexes and enabled triggers apply to every role:
 
@@ -241,18 +246,19 @@ Decisions become a `review_case`:
 - a finding whose condition disappears is marked cleared, and if it recurs, a new case links to the earlier one;
 - `--limit=0` refreshes imported groups without importing new ones.
 
-**Tests.** `bash db/tests/run_sync_tests.sh <empty scratch folder>` runs 111 checks against a synthetic `ledsone` in a disposable cluster, through the real `db-migrate` and `oms-sync` commands. It covers:
+**Tests.** `bash db/tests/run_sync_tests.sh <empty scratch folder>` runs 127 checks against a synthetic `ledsone` in a disposable cluster, through the real `db-migrate` and `oms-sync` commands. It covers:
 
 - dry run;
 - the limit;
 - repeated syncs;
 - complete merge groups;
 - quantity and pack preservation;
-- missing and unmapped country;
+- verified (8, 359), missing and unmapped country ids;
 - staff-data preservation;
 - status, warehouse and line changes;
 - regrouping and refused regrouping;
-- that the OMS data is unchanged.
+- that the OMS data is unchanged;
+- a failed `--apply` that stays in sync history.
 
 ## 3c. Review dashboard (web UI)
 
@@ -262,14 +268,14 @@ npm run start                 # http://127.0.0.1:3100  (npm run dev for developm
 npm run typecheck
 ```
 
-Stack: Next.js 16 (App Router) + TypeScript, Tailwind CSS 4, shadcn/ui components on Radix (`src/client/components/ui`), Motion, Lucide, TanStack Table and Query, and flag-icons. Versions are pinned exactly in `package.json`, and `package-lock.json` is kept. `next` is on the 16.4.2 security patch (16.4.0 had three critical advisories).
+Stack: Next.js 16 (App Router) + TypeScript, Tailwind CSS 4, shadcn/ui components on Radix (`src/client/components/ui`), Motion, Lucide, TanStack Table and Query, flag-icons, and React Hook Form + Zod for the editable forms. Versions are pinned exactly in `package.json`, and `package-lock.json` is kept. `next` is on the 16.4.2 security patch (16.4.0 had three critical advisories).
 
 | Path | What |
 |---|---|
-| `src/app/` | Pages (`/review`, `/sync-history`, `/settings`) and API routes (`/api/queue`, `/api/groups/[id]`, `/api/sync`, `/api/status`) |
-| `src/server/` | Server-only: `db.ts` (psql runner, read-only sessions, error redaction), `queries.ts` (read models), `sync-job.ts` (explicit sync) |
+| `src/app/` | Pages (`/review`, `/sync-history`, `/settings`, `/settings/package-profiles`) and API routes (`/api/queue`, `/api/groups/[id]`, `/api/sync`, `/api/status`, `/api/package-profiles`, `/api/actions/[name]`) |
+| `src/server/` | Server-only: `db.ts` (psql runner, read-only sessions, staff-action runner, error redaction), `queries.ts` (read models), `sync-job.ts` (explicit sync), `request.ts` (same-origin checks) |
 | `src/client/` | UI components and display rules (`lib/domain.ts`) |
-| `src/shared/types.ts` | API response types |
+| `src/shared/` | API response types (`types.ts`) and staff-action request schemas (`actions.ts`, Zod) |
 
 Behaviour:
 
@@ -277,14 +283,15 @@ Behaviour:
 - **Sync Orders** runs the existing `scripts/oms-sync.mjs --apply` (at most 20 new groups) as a child process. It shows only the stages the command prints, never a percentage.
   - Duplicate prevention works at three levels: the button is disabled while a sync runs; the server refuses a second start with 409; and the database refuses a concurrent import (row lock with `NOWAIT`).
   - Sync is disabled, with the reason shown, when either database is unavailable.
-- **Destinations.** A flag is shown only for a verified country mapping or a valid, evidenced per-order confirmation. Everything else shows a globe and "Country not confirmed"; nothing is inferred from raw country ids, the US1 warehouse or the marketplace. A group shows a flag only when every order in it is confirmed.
+- **Destinations.** A flag is shown only for a verified country mapping (8 → US, 359 → CA) or a valid, evidenced per-order confirmation. Everything else shows a globe and "Country not confirmed"; nothing is inferred from raw country ids, the US1 warehouse or the marketplace. A group shows a flag only when every order in it is confirmed.
 - **Customs** is evaluated from the current confirmed destination: awaiting destination, not required (US), or required (Canada).
 - **Ordered items vs parcels.** Ordered items (from the OMS), pack-component reference rows and confirmed parcel contents are shown separately.
 - **Shipment evidence.** Missing tracking is shown as "Prior label: not established", never as proof that an order is unbooked.
 - **Time.** Sync times are shown in the viewer's time zone with its name. OMS order dates are shown as recorded, labelled as having an unverified time zone.
 - **Failure states.** If a refresh fails, the last good data stays on screen with a "Showing earlier data" banner. If nothing has loaded yet, an error panel with a retry button is shown. Synthetic data is never substituted.
 - **Ship-to addresses** are hidden in the order drawer until staff choose "Show ship-to address".
-- **Not available yet:** purchase, print and editing. `ENABLE_LIVE_BOOKING` stays `false`.
+- **Staff actions:** parcel preparation, destination exceptions and finding decisions (§3d). None of them makes an order eligible for purchase on its own: routes and provider accounts are still unverified.
+- **Not available yet:** purchase and print. `ENABLE_LIVE_BOOKING` stays `false`.
 
 Test instances: setting `USB_ENV_FILE=<env file>` before `npm run start` points a separate instance at a disposable setup, such as the synthetic cluster used by the sync tests. Such an instance shows a "Synthetic test data" banner on every page.
 
@@ -302,6 +309,117 @@ Checked on 2026-10-23:
 - a held database lock makes the sync fail cleanly with nothing written;
 - with the database unreachable, the API returns 503 with the host hidden and Sync is disabled.
 
+## 3d. Country mapping, package profiles, parcels and review actions (0006–0008)
+
+**Verified country mapping (`0006`).** `country_map` holds two verified rows: OMS `country_id` 8 → United States (US) and 359 → Canada (CA). The evidence is recorded as "OMS developer confirmation reported by project owner on 2026-10-23.", with `verified_by` "project owner". This project did not verify it independently.
+
+- The OMS column is an integer, so "08" and 8 are the same value; the sync casts the snapshot value to integer.
+- Orders with these ids resolve automatically and need no per-order confirmation.
+- Any other id, a missing id, or a staff confirmation that disagrees with the map stays in review.
+- Applying the map changed no OMS data. Existing orders were recomputed with `npm run sync:oms -- --apply --limit=0` (refresh only, no new orders).
+
+**Package profiles (`0007`).** Settings → Package Profiles (`/settings/package-profiles`).
+
+- A profile has a name and immutable versions. Each version holds:
+  - length, width and height with their unit (in/cm);
+  - optionally, the **total packed shipment weight** with its unit;
+  - optionally, the **empty packaging weight** with its unit (reference only, never used as a shipment weight).
+- Units are stored as entered and never converted.
+- Editing a profile adds a version. A stale edit (someone saved meanwhile) is refused.
+- Defaults are assigned per route:
+  - US1 Shippo (Shopify/eBay) → **US1 Shippo Default**: 9 × 6 × 6 in, 2 kg;
+  - US1 Amazon → **US1 Amazon Default**: 9 × 6 × 6 in, 2 lb.
+- Both were configured on 2026-10-23 through the app with the project owner's confirmed values. Wayfair has no default.
+
+**Parcels.** In the order drawer, "Parcel preparation":
+
+- shows ordered, allocated and remaining units per line, including the lines of merged orders;
+- **Creating a draft parcel** copies the route's default dimensions and packed weight, and records the profile id and version. The copied values are marked "Default profile"; `measured_by`/`measured_at` stay empty, because nobody measured them.
+- **Overrides.** Staff change values only when the package differs. A changed part becomes "Custom", with their name and time. "Use default …" returns to the parcel's own recorded profile version, never a newer one, so later profile edits never change existing parcels.
+- **Contents** are never confirmed by a profile. For a single parcel, the remaining ordered items are proposed and staff confirm them in one step. "Add another parcel (split)" and "Choose items" allocate quantities per line.
+- **Database rules:**
+  - `parcel_provenance` refuses profile-labelled values that differ from the recorded version;
+  - check constraints require a unit and a source for every value;
+  - the existing allocation trigger refuses over-allocation;
+  - the existing lock freezes a parcel with a pending, unknown or active purchase or label.
+- **Booking precondition.** It now accepts profile-sourced or staff-entered measurements (each needs a value, a unit and a source). Contents must still be staff-confirmed.
+
+**Review actions (`0008`).** Each one is a database function called through `POST /api/actions/<name>`:
+
+- confirm a destination, only for unresolved orders (exceptions), with evidence;
+- revoke a confirmation;
+- resolve or dismiss a finding, with evidence.
+
+How they work:
+
+- **Identity.** Staff enter their name once (remembered in the browser; there is no sign-in yet). It is recorded with each action.
+- **Stale-edit protection.** Every action sends the version it was shown (the ship-to hash, the finding's details hash, or the parcel's row version), and stale requests are refused with 409.
+- **Scope.** Closing a finding changes only that finding. Address-change revocation and recurring-finding detection (0005) are unchanged.
+- **Request checks.** The server accepts actions only as same-origin JSON requests.
+
+**Failed syncs.** `oms-sync --apply` records a failure with `sync_record_failure()` in a separate transaction, so Sync History keeps it. Host names and credentials are removed from the stored message.
+
+**Tests.** The synthetic suites cover:
+
+- automatic mapping (including "08"), unknown and missing ids;
+- profile prefill in kg and lb, manual overrides, profile version changes;
+- allocation, split and merged parcels;
+- booking locks and stale edits;
+- case resolution;
+- a real failed `--apply` (local suite: 186 checks; sync suite: 121 checks).
+
+**Parcel contents after OMS changes (`0009`).**
+
+- **What is recorded.** A contents confirmation stores its basis (`parcel.contents_basis`): the group's order membership plus, for each packed line, the ordered quantity, SKU identity and OMS presence.
+- **What the sync does.** In its own transaction it marks lines the OMS no longer returns (`oms_order_item.oms_absent_since`) and compares every confirmed parcel with its basis:
+  - an unlocked parcel becomes `stale` and gets an open `parcel_contents_discrepancy` that keeps the earlier confirmation and lists the changes;
+  - a parcel locked by a purchase or label is left untouched, and its discrepancy blocks further purchasing until staff acknowledge it with evidence.
+- **What it never does.** Nothing is redistributed, reduced or confirmed automatically, and an unchanged sync changes nothing.
+- **Readiness checks.** Readiness (the `parcel_contents` requirement) and the booking precondition are recomputed per line in the database. Closing a review case does not make stale contents valid.
+- **Stale edits.** A staff edit that overlaps a sync waits for it, then is refused as stale.
+
+## 3e. Wayfair sandbox (Settings → Wayfair Sandbox)
+
+The OMS stays the only source of orders; nothing imports Wayfair orders. This page is for checking the Wayfair account and the shipment registration and label workflow in Wayfair's SANDBOX.
+
+**Configuration** (`.env`, server-only; see `.env.example`):
+
+| Key | Meaning |
+|---|---|
+| `WAYFAIR_MODE` | must be `sandbox`; any other value disables the integration |
+| `WAYFAIR_SANDBOX_CLIENT_ID`, `WAYFAIR_SANDBOX_CLIENT_SECRET` | the sandbox application's keys |
+| `WAYFAIR_SUPPLIER_ID` | our Wayfair supplier id; sandbox POs from any other supplier are refused, and registration is refused while it is empty |
+| `WAYFAIR_WAREHOUSE_ID` | optional Wayfair warehouse id (not the OMS warehouse 32); empty = Wayfair uses the PO's warehouse |
+| `WAYFAIR_ORDER_IMPORT_ENABLED` | must stay `false` |
+
+**Endpoints** are fixed in `src/server/wayfair/config.ts` from Wayfair's developer documentation, read on 2026-10-23. There are no production constants and no fallback.
+
+- token: `POST https://sso.auth.wayfair.com/oauth/token` with `grant_type=client_credentials` and the sandbox audience `https://sandbox.api.wayfair.com/`;
+- GraphQL: `https://sandbox.api.wayfair.com/v1/graphql`;
+- label: `GET https://sandbox.api.wayfair.com/v1/shipping_label/<PO>`.
+
+Tokens last 24 hours. The app renews a token after 12 hours, when it is about to expire, or after a 401.
+
+**What each button does.** Every button is one explicit call:
+
+- *Test authentication* requests a token.
+- *Look up sandbox orders* runs `getDropshipPurchaseOrders`, at most 10 orders, requesting only PO numbers, dates, supplier ids and part numbers. It shows whether the supplier matches. A PO that also exists in the OMS (same reference, or the reference plus a suffix such as `-zen`) is flagged and never linked.
+- *Check registration at Wayfair* runs `labelGenerationEvents`, filtered on the PO's nine digits as Wayfair requires.
+- *Register in sandbox* runs the `register` mutation, optionally with explicitly entered test measurements in cm and kg (the documented units).
+- *Fetch sandbox label* stores the file under `LABEL_STORAGE_DIR/wayfair-sandbox/` with a `SANDBOX-` file name, and offers preview and download.
+
+**Protections (migration `0010`).**
+
+- Sandbox registrations and labels are kept in their own tables, with no link to live parcels, booking attempts or readiness.
+- A PO with a requested, succeeded, unknown or found-existing record is never registered again.
+- The record is committed before the call. A call without a definite answer (timeout, HTTP 5xx) becomes "outcome unknown" and is never repeated automatically; staff record the real outcome with evidence.
+- Sandbox success never marks the live Wayfair route verified.
+
+**Tests.**
+
+- `db/tests/tests_wayfair_sandbox.sql` is part of the local suite (247 checks).
+- `tests/wayfair/mock-server.mjs` with `tests/wayfair/run-mock-tests.mjs` runs 29 API checks against a synthetic instance: credentials, expiry, revocation, wrong account, empty and failed order access, GraphQL errors, HTTP 500, timeout, repeats, labels, and leak checks.
+
 ## 4. Schema test suite (optional)
 
 ```
@@ -312,7 +430,7 @@ The suite:
 
 - initialises a disposable PostgreSQL cluster on port 55432 (override with `TEST_PG_PORT`) and verifies it is talking to that cluster;
 - applies `db/migrations/*.sql` (twice, to prove they are idempotent), then the deferred separate-role grants;
-- loads synthetic fixtures and runs the tests (106 checks);
+- loads synthetic fixtures and runs the tests (247 checks, including `tests_wayfair_sandbox.sql`; `tests.sql`, `tests_actions.sql` for 0006–0008, `tests_contents.sql` and `concurrency_contents.sh` for 0009);
 - deletes the cluster afterwards.
 
 It never touches an existing server.
