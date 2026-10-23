@@ -159,6 +159,8 @@ export interface DetailParcel {
   measured_at: string | null;
   profile: {profile_id: number; name: string; values: ProfileVersion} | null;  // the version recorded on this parcel
   locked: boolean;                    // pending/unknown/active purchase or live label
+  packaging_mode: 'measured' | 'provider_managed';  // provider_managed: Wayfair uses its own package data
+  packaging_exception_reason: string | null;        // why a Wayfair parcel is measured instead
   discrepancy: ContentsDiscrepancy | null;  // the open one, else the latest closed one
   items: Array<{oms_order_item_id: number; quantity: number}>;
 }
@@ -195,7 +197,8 @@ export interface ContentsDiscrepancy {
 export interface GroupDetail {
   group: {id: number; group_key: string; state: string; provider: string; provider_account: string;
           blocked_reason: string | null; warehouse_id: number; created_at: string; updated_at: string};
-  allocation_problems: string | null;  // allocations the current order lines no longer support
+  allocation_problems: string | null;
+  packaging_policy: {mode: 'provider_managed'; production_verified: boolean} | null;  // Wayfair groups only  // allocations the current order lines no longer support
   package_default: {assignment: string; profile_id: number; profile_name: string; values: ProfileVersion} | null;
   orders: DetailOrder[];
   lines: DetailLine[];

@@ -68,6 +68,8 @@ export async function getGroupDetail(id: number): Promise<GroupDetail | null> {
                                'provider_account', g.provider_account, 'blocked_reason', g.blocked_reason,
                                'warehouse_id', g.warehouse_id, 'created_at', g.created_at, 'updated_at', g.updated_at),
     'allocation_problems', us_booking.group_allocation_problems(g.id),
+    'packaging_policy', (SELECT json_build_object('mode', pp.mode, 'production_verified', pp.production_verified_at IS NOT NULL)
+                           FROM us_booking.provider_packaging_policy pp WHERE pp.provider = g.provider),
     'package_default', (SELECT json_build_object('assignment', pa.assignment, 'profile_id', pp.id, 'profile_name', pp.name,
                                                  'values', (SELECT ${VERSION} FROM us_booking.package_profile_version v
                                                              WHERE v.profile_id = pp.id AND v.version = pp.current_version))
@@ -119,6 +121,7 @@ export async function getGroupDetail(id: number): Promise<GroupDetail | null> {
                      'values', (SELECT ${VERSION} FROM us_booking.package_profile_version v
                                  WHERE v.profile_id = p.package_profile_id AND v.version = p.package_profile_version)) END,
         'locked', us_booking.parcel_is_locked(p.id),
+        'packaging_mode', p.packaging_mode, 'packaging_exception_reason', p.packaging_exception_reason,
         'discrepancy', (SELECT json_build_object('id', pd.id, 'status', pd.status, 'parcel_locked', pd.parcel_locked,
                           'changes', pd.changes, 'confirmed_basis', pd.confirmed_basis, 'confirmed_by', pd.confirmed_by,
                           'confirmed_at', pd.confirmed_at, 'current_hash', pd.current_hash, 'detected_at', pd.detected_at,

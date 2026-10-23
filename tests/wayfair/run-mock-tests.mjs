@@ -51,7 +51,7 @@ await scenario({orders: 'ok'});
 r = await op('orders', {limit: 10, has_response: null});
 const orders = r.body.result?.orders ?? [];
 check('sample of sandbox orders returned with account check',
-  r.status === 200 && orders.length === 5 && orders.find(o => o.po_number === 'TEST_1').account_match === 'supplier'
+  r.status === 200 && orders.length === 6 && orders.find(o => o.po_number === 'TEST_1').account_match === 'supplier'
     && orders.find(o => o.po_number === 'TEST_2').account_match === 'mismatch');
 
 // Token expiry and revocation.
@@ -98,6 +98,10 @@ check('a rejected registration is recorded as failed with Wayfair\'s message', r
 await scenario({register: 'ok'});
 r = await op('register', {staff, po_number: 'TEST_3', package: null});
 check('a failed registration can be retried by staff', r.status === 200 && r.body.result.result === 'succeeded');
+const wfManaged = JSON.parse((await mockState()).bodies.at(-1));
+check('Wayfair-managed packaging: no packageUnits (and no measurement fields) sent',
+  /register\(/.test(wfManaged.query) && !('packageUnits' in wfManaged.variables.registrationInput)
+    && !/weight|dimensions|length/i.test(JSON.stringify(wfManaged.variables)));
 await scenario({register: '500'});
 r = await op('register', {staff, po_number: 'TEST_4', package: null});
 check('HTTP 500 during registration is recorded as unknown', r.status === 200 && r.body.result.result === 'unknown');
@@ -117,6 +121,18 @@ check('a timed-out registration is recorded as unknown', r.status === 200 && r.b
   `${Math.round((Date.now() - t0) / 1000)} s`);
 await scenario({register: 'ok'});
 
+// An existing Wayfair registration found by lookup (poNumber returned as a number) blocks registering.
+await scenario({events: 'numeric_match'});
+regBefore = (await mockState()).calls.register;
+r = await op('register', {staff, po_number: 'CS123456789', package: null});
+const lookupBody = JSON.parse((await mockState()).bodies.at(-1));
+check('lookup filters on the nine digits and a numeric poNumber match counts as already registered',
+  r.status === 200 && r.body.result.result === 'existing' && lookupBody.variables.filters[0].equals === '123456789'
+    && (await mockState()).calls.register === regBefore);
+r = await op('register', {staff, po_number: 'CS123456789', package: null});
+check('the found registration is recorded and blocks later attempts', r.status === 409 && /found_existing/.test(r.body.error));
+await scenario({events: 'static'});
+
 // Labels.
 s = await status();
 const reg1 = s.records.registrations.find(x => x.po_number === 'TEST_1' && x.state === 'succeeded');
@@ -125,6 +141,12 @@ check('sandbox label downloaded and stored with its hash', r.status === 200 && r
 const lbl = await fetch(`${app}/api/wayfair-sandbox/labels/${r.body.result.label_id}`);
 const disp = lbl.headers.get('content-disposition') ?? '';
 check('label served for preview/download, file name marked SANDBOX', lbl.status === 200 && (await lbl.text()).startsWith('%PDF') && /SANDBOX-TEST_1-/.test(disp));
+const callsBeforeReopen = (await mockState()).calls;
+for (const q of ['?inline=1', '', '']) await (await fetch(`${app}/api/wayfair-sandbox/labels/${r.body.result.label_id}${q}`)).arrayBuffer();
+const callsAfterReopen = (await mockState()).calls;
+check('reopening the stored label (preview, download, reprint) contacts Wayfair zero times and registers nothing',
+  callsAfterReopen.register === callsBeforeReopen.register && callsAfterReopen.label === callsBeforeReopen.label
+    && callsAfterReopen.graphql === callsBeforeReopen.graphql);
 const reg5 = s.records.registrations.find(x => x.po_number === 'TEST_5');
 r = await op('fetch-label', {staff, registration_id: reg5.id});
 check('no label for a PO whose registration is unknown', r.status === 409, r.body.error);

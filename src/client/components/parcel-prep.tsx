@@ -34,6 +34,19 @@ function profileSummary(v: ProfileVersion): string {
 
 function DefaultNote({detail}: {detail: GroupDetail}) {
   const d = detail.package_default;
+  if (detail.packaging_policy) {
+    return (
+      <div className="flex items-start gap-2 rounded-xl border border-teal-line bg-teal-soft px-3 py-2 text-xs text-teal-strong">
+        <Boxes aria-hidden className="mt-0.5 size-3.5 shrink-0" />
+        <p>
+          <span className="font-semibold">Wayfair-managed packaging.</span> Wayfair uses the package information it holds for these products
+          and supplies the labels, so staff do not enter weight or dimensions. Record a packaging exception only when the shipment is packed
+          differently (for example, items consolidated into fewer cartons).
+          {!detail.packaging_policy.production_verified && ' Not yet verified in production: Wayfair orders cannot be booked with this mode until a controlled production test.'}
+        </p>
+      </div>
+    );
+  }
   return (
     <div className="flex items-start gap-2 rounded-xl border border-teal-line bg-teal-soft px-3 py-2 text-xs text-teal-strong">
       <Boxes aria-hidden className="mt-0.5 size-3.5 shrink-0" />
@@ -339,6 +352,62 @@ function DiscrepancyPanel({parcel, detail, editable}: {parcel: DetailParcel; det
   );
 }
 
+// A Wayfair shipment registered without package units: Wayfair decides cartons and labels from its
+// own product data. It is one record for the purchase order, not a carton count.
+function WayfairManagedPanel({parcel, editable}: {parcel: DetailParcel; editable: boolean}) {
+  const {name: staff} = useStaff();
+  const setPackaging = useAction('parcel-packaging');
+  const [open, setOpen] = React.useState(false);
+  const form = useForm<{reason: string}>({defaultValues: {reason: ''}});
+  const id = `pk-${parcel.id}`;
+  return (
+    <div className="mt-3 space-y-2 rounded-lg bg-canvas px-3 py-2 text-sm">
+      <p className="flex flex-wrap items-center gap-2">
+        <Badge tone="teal"><Boxes aria-hidden />Wayfair-managed packaging</Badge>
+        <span className="text-xs text-muted">No weight or dimensions are entered here; Wayfair uses the package data it holds.</span>
+      </p>
+      <p className="text-xs text-muted">Package details not returned to this app. Cartons and labels are Wayfair&apos;s: this record covers the purchase order, not a carton.</p>
+      {editable && !open && (
+        <Button size="sm" variant="outline" onClick={() => setOpen(true)}><Pencil aria-hidden />Record packaging exception…</Button>
+      )}
+      {open && (
+        <form noValidate className="space-y-2" onSubmit={form.handleSubmit(async v => {
+          await setPackaging.mutateAsync({staff, parcel_id: parcel.id, expected_row_version: parcel.row_version, mode: 'measured', reason: v.reason});
+          setOpen(false);
+        })}>
+          <Label htmlFor={id}>Why is this shipment packed differently from Wayfair&apos;s product data?</Label>
+          <Textarea id={id} rows={2} placeholder="For example: two items consolidated into one carton"
+            {...form.register('reason', {validate: v => v.trim().length >= 3 || 'Give a reason (at least 3 characters)'})} />
+          <FieldError message={form.formState.errors.reason?.message} />
+          <p className="text-xs text-muted">You will then enter the package&apos;s dimensions and weight in centimetres and kilograms, the units Wayfair documents.</p>
+          <ActionMessage error={setPackaging.error} />
+          <div className="flex gap-2">
+            <Button type="submit" size="sm" disabled={setPackaging.isPending}>Record exception</Button>
+            <Button type="button" size="sm" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+          </div>
+        </form>
+      )}
+    </div>
+  );
+}
+
+function PackagingExceptionNote({parcel, editable}: {parcel: DetailParcel; editable: boolean}) {
+  const {name: staff} = useStaff();
+  const setPackaging = useAction('parcel-packaging');
+  return (
+    <div className="mt-3 space-y-1 rounded-lg border border-review-line bg-review-soft px-3 py-2 text-xs text-review">
+      <p><span className="font-semibold">Packaging exception:</span> {parcel.packaging_exception_reason}. Enter the measurements in cm and kg.</p>
+      {editable && (
+        <Button size="sm" variant="ghost" disabled={setPackaging.isPending}
+          onClick={() => setPackaging.mutate({staff, parcel_id: parcel.id, expected_row_version: parcel.row_version, mode: 'provider_managed'})}>
+          <RotateCcw aria-hidden />Return to Wayfair-managed packaging
+        </Button>
+      )}
+      <ActionMessage error={setPackaging.error} />
+    </div>
+  );
+}
+
 function ParcelCard({parcel, detail, editable}: {parcel: DetailParcel; detail: GroupDetail; editable: boolean}) {
   const {name: staff} = useStaff();
   const [mode, setMode] = React.useState<'view' | 'measure' | 'contents' | 'remove'>('view');
@@ -379,6 +448,11 @@ function ParcelCard({parcel, detail, editable}: {parcel: DetailParcel; detail: G
         </div>
       )}
 
+      {parcel.packaging_mode === 'provider_managed' ? (
+        <WayfairManagedPanel parcel={parcel} editable={canEdit} />
+      ) : (
+      <>
+      {parcel.packaging_exception_reason && <PackagingExceptionNote parcel={parcel} editable={canEdit} />}
       <dl className="mt-3 grid gap-2 sm:grid-cols-2">
         <MeasureRow icon={Ruler} label="Dimensions (L × W × H)" parcel={parcel} source={parcel.dimensions_source}
           value={formatDimensions(parcel.length, parcel.width, parcel.height, parcel.dimension_unit)} />
@@ -403,6 +477,8 @@ function ParcelCard({parcel, detail, editable}: {parcel: DetailParcel; detail: G
         </div>
       )}
       {mode === 'measure' && <MeasureForm parcel={parcel} onDone={() => setMode('view')} />}
+      </>
+      )}
 
       <div className="mt-4 border-t border-line pt-3">
         <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Contents</h4>
@@ -459,6 +535,7 @@ export function ParcelSection({detail}: {detail: GroupDetail}) {
   const inReview = detail.group.state === 'review';
   const editable = inReview && valid;
   const remaining = detail.lines.reduce((n, l) => n + l.quantity_ordered - l.allocated_qty, 0);
+  const wayfairManaged = Boolean(detail.packaging_policy) && detail.parcels.some(p => p.packaging_mode === 'provider_managed');
   return (
     <Section icon={PackageOpen} tone="teal" title="Parcel preparation"
       aside={<span className="text-xs tabular-nums text-muted">{detail.parcels.length} parcel{detail.parcels.length === 1 ? '' : 's'} · {remaining} unit{remaining === 1 ? '' : 's'} remaining</span>}>
@@ -483,9 +560,14 @@ export function ParcelSection({detail}: {detail: GroupDetail}) {
           <p className="text-sm text-muted">No parcels yet. The ordered items above are not parcel contents until staff confirm them.</p>
         )}
         <div className="flex flex-wrap items-center gap-3">
-          <Button size="sm" disabled={!editable || create.isPending} onClick={() => create.mutate({staff, group_id: detail.group.id})}>
-            <PackagePlus aria-hidden />{create.isPending ? 'Creating…' : detail.parcels.length ? 'Add another parcel (split)' : 'Create draft parcel'}
-          </Button>
+          {wayfairManaged ? (
+            <p className="text-xs text-muted">One Wayfair-managed record covers this purchase order; Wayfair decides the cartons.</p>
+          ) : (
+            <Button size="sm" disabled={!editable || create.isPending} onClick={() => create.mutate({staff, group_id: detail.group.id})}>
+              <PackagePlus aria-hidden />{create.isPending ? 'Creating…' : detail.parcels.length ? 'Add another parcel (split)'
+                : detail.packaging_policy ? 'Create shipment record' : 'Create draft parcel'}
+            </Button>
+          )}
           <Link href="/settings/package-profiles" className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
             <Settings2 aria-hidden className="size-3.5" />Package defaults
           </Link>

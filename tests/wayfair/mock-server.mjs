@@ -7,7 +7,7 @@ import http from 'node:http';
 const [port, clientId, clientSecret] = process.argv.slice(2);
 const AUDIENCE = 'https://sandbox.api.wayfair.com/';
 const state = {
-  scenario: {token: 'ok', orders: 'ok', register: 'ok', expiresIn: 3600},
+  scenario: {token: 'ok', orders: 'ok', register: 'ok', events: 'static', expiresIn: 3600},
   tokens: new Map(),          // token -> expiry (ms)
   registered: new Set(),
   calls: {token: 0, graphql: 0, register: 0, label: 0, unauthorised: 0},
@@ -19,6 +19,7 @@ const ORDERS = [
   {poNumber: 'TEST_3', poDate: '2026-10-22 12:00:00', supplierId: 12345, products: [{partNumber: 'PART-C', quantity: 1, price: 7}]},
   {poNumber: 'TEST_4', poDate: '2026-10-22 13:00:00', supplierId: 12345, products: [{partNumber: 'PART-D', quantity: 1, price: 7}]},
   {poNumber: 'TEST_5', poDate: '2026-10-22 14:00:00', supplierId: 12345, products: [{partNumber: 'PART-E', quantity: 1, price: 7}]},
+  {poNumber: 'CS123456789', poDate: '2026-10-22 15:00:00', supplierId: 12345, products: [{partNumber: 'PART-F', quantity: 1, price: 7}]},
 ];
 const PDF = Buffer.from('%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n');
 
@@ -65,6 +66,11 @@ http.createServer(async (req, res) => {
       return json(res, 200, {data: {getDropshipPurchaseOrders: list.slice(0, variables?.limit ?? 10)}});
     }
     if (/labelGenerationEvents/.test(query)) {
+      const equals = variables?.filters?.[0]?.equals;
+      if (state.scenario.events === 'numeric_match' && /^[0-9]{9}$/.test(String(equals))) {
+        // Like the real sandbox: poNumber comes back as a number without the two-letter prefix.
+        return json(res, 200, {data: {labelGenerationEvents: [{...event(`CS${equals}`), poNumber: Number(equals)}]}});
+      }
       // Like the documented sandbox: a static example not tied to the requested PO.
       return json(res, 200, {data: {labelGenerationEvents: [event('CS_STATIC_EXAMPLE')]}});
     }

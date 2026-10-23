@@ -24,6 +24,7 @@ import {measure} from '@/shared/actions';
 interface Check {ok: boolean; at: string; detail: string; expires_at?: string | null; count?: number | null}
 interface Registration {
   id: number; po_number: string; supplier_id: string | null; warehouse_id: string | null; state: string; source: string;
+  request_summary: {warehouse_id?: string | null; package_units?: unknown[] | null} | null;
   response_summary: {event_id?: string | null; pickup_date?: string | null; tracking?: Array<{carrier: string | null; tracking_number: string | null}>;
                      documents?: Record<string, boolean>} | null;
   error: string | null; requested_by: string; requested_at: string; resolved_by: string | null; resolution: string | null;
@@ -112,10 +113,10 @@ function RegisterForm({order, onDone}: {order: SandboxOrder; onDone: () => void}
     <div className="mt-2 space-y-3 rounded-xl border border-violet-line bg-violet-soft/40 p-3">
       <p className="text-xs text-muted">
         Registers sandbox PO <span className="font-mono">{order.po_number}</span> with Wayfair&apos;s sandbox. Wayfair is asked first whether it is already
-        registered, and a PO registered here (or with an unknown outcome) is never registered again. No package default is assumed: without test
-        measurements the package details are left to Wayfair.
+        registered, and a PO registered here (or with an unknown outcome) is never registered again. Normally the PO is registered with
+        Wayfair-managed packaging: no package units are sent and Wayfair uses the package data it holds. Send package units only as an exception.
       </p>
-      <label className="inline-flex items-center gap-2 text-sm"><input type="checkbox" checked={withPkg} onChange={e => setWithPkg(e.target.checked)} />Enter test package measurements (cm and kg)</label>
+      <label className="inline-flex items-center gap-2 text-sm"><input type="checkbox" checked={withPkg} onChange={e => setWithPkg(e.target.checked)} />Packaging exception: send package units (consolidated or custom packaging, cm and kg)</label>
       {withPkg && (
         <fieldset className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <legend className="mb-1 text-xs font-semibold text-ink">One carton holding every ordered unit</legend>
@@ -213,6 +214,12 @@ function RegistrationRow({reg, labels}: {reg: Registration; labels: Label[]}) {
         <Badge tone={STATE_TONE[reg.state] ?? 'neutral'}>{STATE_LABEL[reg.state] ?? reg.state}</Badge>
         <span className="text-xs text-muted">#{reg.id} · {reg.requested_by}, {formatTimestamp(reg.requested_at)}{reg.source === 'lookup' ? ' · found by lookup' : ''}</span>
       </div>
+      <p className="mt-1 text-xs text-muted">
+        {reg.source === 'lookup' ? 'Registered outside this app.'
+          : reg.request_summary?.package_units ? 'Packaging exception: package units were sent.'
+          : 'Wayfair-managed packaging: no package units sent.'}{' '}
+        Package details not returned to this app.
+      </p>
       {rs && (
         <p className="mt-1 text-xs text-muted">
           {rs.event_id ? `Event ${rs.event_id}` : ''}{rs.pickup_date ? ` · pickup ${rs.pickup_date}` : ''}
@@ -226,7 +233,7 @@ function RegistrationRow({reg, labels}: {reg: Registration; labels: Label[]}) {
       {(reg.state === 'succeeded' || reg.state === 'found_existing') && (
         <div className="mt-2 space-y-1">
           <Button size="sm" variant="outline" disabled={!valid || fetchLabel.isPending} onClick={() => fetchLabel.mutate({staff, registration_id: reg.id})}>
-            <Download aria-hidden />{fetchLabel.isPending ? 'Downloading…' : 'Fetch sandbox label'}
+            <Download aria-hidden />{fetchLabel.isPending ? 'Downloading…' : mine.length ? 'Download a fresh copy from Wayfair' : 'Fetch sandbox label'}
           </Button>
           <ActionMessage error={fetchLabel.error} />
           {mine.map(l => (
@@ -312,7 +319,8 @@ export function WayfairSandbox() {
 
       <Card className="p-5">
         <div className="mb-3 flex items-center gap-3"><IconTile icon={FileText} tone="violet" size="sm" /><h2 className="text-sm font-semibold">Sandbox registrations and labels</h2></div>
-        <p className="mb-2 text-xs text-muted">Wayfair documents that sandbox labels are often static example files. Wait about 15 minutes after registering before fetching a label.</p>
+        <p className="mb-2 text-xs text-muted">Wayfair documents that sandbox labels are often static example files. Wait about 15 minutes after registering before fetching a label.
+          Preview and download open the stored original file; neither contacts Wayfair or registers again. The number of pages in a label file is not a carton count.</p>
         {s.records?.registrations.length
           ? <ul className="divide-y divide-line">{s.records.registrations.map(r => <RegistrationRow key={r.id} reg={r} labels={s.records!.labels} />)}</ul>
           : <p className="text-sm text-muted">No sandbox registrations yet.</p>}

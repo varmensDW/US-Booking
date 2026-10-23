@@ -106,3 +106,7 @@ GRANT EXECUTE ON FUNCTION
   us_booking.wayfair_sandbox_begin(jsonb), us_booking.wayfair_sandbox_finish(jsonb), us_booking.wayfair_sandbox_record_existing(jsonb),
   us_booking.wayfair_sandbox_resolve(jsonb), us_booking.wayfair_sandbox_label_add(jsonb)
 TO us_booking_app;
+
+-- Added with 0011 (Wayfair-managed packaging).
+GRANT SELECT ON us_booking.provider_packaging_policy TO us_booking_app;
+GRANT EXECUTE ON FUNCTION us_booking.staff_parcel_set_packaging(jsonb) TO us_booking_app;

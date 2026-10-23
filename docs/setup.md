@@ -121,6 +121,7 @@ Applied on 2026-10-23:
 | 0006 | `0006_country_map_oms_confirmed.sql` | Verified country map rows: 8 → US, 359 → CA (stops instead of replacing a conflicting row) (§3d) |
 | 0007 | `0007_package_profiles_parcel_units.sql` | Versioned package profiles and route defaults; parcel units and value source; booking precondition accepts default-profile values (§3d) |
 | 0008 | `0008_staff_review_actions.sql` | Staff actions (profiles, parcels, destination exceptions, findings) and failed-sync records (§3d) |
+| 0011 | `0011_wayfair_managed_packaging.sql` | Wayfair-managed packaging mode, packaging exceptions, production-verification gate (§3f) |
 | 0010 | `0010_wayfair_sandbox.sql` | Wayfair sandbox registration and label records, isolated from live booking (§3e) |
 | 0009 | `0009_parcel_contents_revalidation.sql` | Parcel contents confirmations revalidated by the sync; discrepancies; booking checks the confirmation basis (§3d) |
 
@@ -418,7 +419,31 @@ Tokens last 24 hours. The app renews a token after 12 hours, when it is about to
 **Tests.**
 
 - `db/tests/tests_wayfair_sandbox.sql` is part of the local suite (247 checks).
-- `tests/wayfair/mock-server.mjs` with `tests/wayfair/run-mock-tests.mjs` runs 29 API checks against a synthetic instance: credentials, expiry, revocation, wrong account, empty and failed order access, GraphQL errors, HTTP 500, timeout, repeats, labels, and leak checks.
+- `tests/wayfair/mock-server.mjs` with `tests/wayfair/run-mock-tests.mjs` runs 33 API checks against a synthetic instance: credentials, expiry, revocation, wrong account, empty and failed order access, GraphQL errors, HTTP 500, timeout, repeats, labels, and leak checks.
+
+## 3f. Wayfair-managed packaging (`0011`)
+
+The warehouse team doesn't measure Wayfair orders: Wayfair holds package data from the product listings, and staff print the label Wayfair supplies.
+
+**Documentation basis.** Wayfair's Registration & Shipping API guide says:
+
+- `packageUnits` is optional;
+- `packageUnits` is meant for consolidation ("if you pack multiple items/quantities into fewer boxes");
+- `warehouseId` defaults to the PO's warehouse;
+- `shipping_label` returns all labels of a PO.
+
+**Sandbox evidence.** The first sandbox registration sent no `packageUnits` and succeeded. **Not verified:** which package data production uses when `packageUnits` is omitted. The documentation doesn't say.
+
+**How the app handles Wayfair parcels:**
+
+- **The record.** A parcel on a Wayfair-routed group starts in `provider_managed` mode. It holds no measurements at all (no zeros, profile values or label-derived values), and the screen shows "Package details not returned to this app". It is one record for the purchase order, not a carton.
+- **Readiness.** The measurement requirement is met by the mode for a group with exactly one order. A merged Wayfair group (several POs) needs a staff decision.
+- **Packaging exception** (consolidated or custom packaging). It needs a reason, then measurements in cm and kg, the units Wayfair documents for `packageUnits`. Staff can return the parcel to Wayfair-managed mode; the cleared values stay in `event_log`.
+- **Booking check.** It accepts `provider_managed` only for Wayfair, only for one-order groups, and only after `provider_packaging_policy.production_verified_at` is set by a controlled production test. Until then, Wayfair-managed parcels cannot be booked.
+- **Other providers.** Shippo and Amazon (profiles, prefill and measurement checks) are unchanged. `provider_managed` is refused for them.
+- **Sandbox page.** Registration omits `packageUnits` unless a packaging exception is chosen. Stored labels are reused for preview, download and reprint, with no Wayfair call and no new registration.
+
+Tests: local suite 270 checks (`tests_packaging.sql`), Wayfair mock suite 33 checks.
 
 ## 4. Schema test suite (optional)
 
@@ -430,7 +455,7 @@ The suite:
 
 - initialises a disposable PostgreSQL cluster on port 55432 (override with `TEST_PG_PORT`) and verifies it is talking to that cluster;
 - applies `db/migrations/*.sql` (twice, to prove they are idempotent), then the deferred separate-role grants;
-- loads synthetic fixtures and runs the tests (247 checks, including `tests_wayfair_sandbox.sql`; `tests.sql`, `tests_actions.sql` for 0006–0008, `tests_contents.sql` and `concurrency_contents.sh` for 0009);
+- loads synthetic fixtures and runs the tests (270 checks, including `tests_wayfair_sandbox.sql` and `tests_packaging.sql`; `tests.sql`, `tests_actions.sql` for 0006–0008, `tests_contents.sql` and `concurrency_contents.sh` for 0009);
 - deletes the cluster afterwards.
 
 It never touches an existing server.

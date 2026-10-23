@@ -214,8 +214,8 @@ SELECT test_support.ok('T12 Shippo parcel prefilled: 9 x 6 x 6 in, 2 kg, from th
      FROM us_booking.parcel WHERE id = test_support.pid(9201, 1)));
 SELECT test_support.ok('T12 Amazon parcel prefilled with 2 lb (units preserved, not kg)',
   (SELECT weight = 2 AND weight_unit = 'lb' AND weight_source = 'profile' FROM us_booking.parcel WHERE id = test_support.pid(9202, 1)));
-SELECT test_support.ok('T12 Wayfair parcel: no default assigned, nothing prefilled',
-  (SELECT length IS NULL AND weight IS NULL FROM us_booking.parcel WHERE id = test_support.pid(9203, 1)));
+SELECT test_support.ok('T12 Wayfair parcel: Wayfair-managed packaging (0011), nothing prefilled',
+  (SELECT length IS NULL AND weight IS NULL AND packaging_mode = 'provider_managed' FROM us_booking.parcel WHERE id = test_support.pid(9203, 1)));
 SELECT test_support.ok('T12 a profile never confirms contents',
   (SELECT contents_status = 'unconfirmed' AND confirmed_by IS NULL FROM us_booking.parcel WHERE id = test_support.pid(9201, 1)));
 SELECT test_support.ok('T12 prefilled measurements meet the measurement requirement without re-entry',
@@ -277,14 +277,14 @@ SELECT test_support.ok('T12 reset to default uses the parcel''s own version (2 k
 SELECT test_support.ok('T12 every measurement change is in the audit log',
   (SELECT count(*) FROM us_booking.event_log WHERE entity = 'parcel' AND entity_id = test_support.pid(9201, 1)
      AND details->>'action' = 'measurements') = 3);
-SELECT test_support.act('staff_parcel_measure', jsonb_build_object('staff', 'Packer One', 'parcel_id', test_support.pid(9203, 1),
-  'expected_row_version', test_support.rv(9203, 1), 'dimensions', jsonb_build_object('length', '12', 'width', '10', 'height', '8', 'unit', 'in'),
+SELECT test_support.act('staff_parcel_measure', jsonb_build_object('staff', 'Packer One', 'parcel_id', test_support.pid(9206, 1),
+  'expected_row_version', test_support.rv(9206, 1), 'dimensions', jsonb_build_object('length', '12', 'width', '10', 'height', '8', 'unit', 'in'),
   'weight', jsonb_build_object('value', '3.25', 'unit', 'lb')));
 SELECT test_support.ok('T12 parcel without a default: staff enter values once',
   (SELECT weight = 3.25 AND weight_unit = 'lb' AND dimensions_source = 'staff' AND measured_by = 'Packer One'
-     FROM us_booking.parcel WHERE id = test_support.pid(9203, 1)));
+     FROM us_booking.parcel WHERE id = test_support.pid(9206, 1)));
 SELECT test_support.expect_action_error('T12 reset to default refused when the parcel had none', 'staff_parcel_measure',
-  jsonb_build_object('staff', 'Packer One', 'parcel_id', test_support.pid(9203, 1), 'expected_row_version', test_support.rv(9203, 1), 'dimensions', 'profile'),
+  jsonb_build_object('staff', 'Packer One', 'parcel_id', test_support.pid(9206, 1), 'expected_row_version', test_support.rv(9206, 1), 'dimensions', 'profile'),
   'UB409', 'not created from a default profile');
 
 -- ============================================================================================

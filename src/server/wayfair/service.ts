@@ -150,7 +150,7 @@ export async function lookupOrders(input: {limit: number; hasResponse: boolean |
 
 interface RawEvent {
   id?: string | number;
-  poNumber?: string;
+  poNumber?: string | number;
   pickupDate?: string;
   billOfLading?: {url?: string} | null;
   consolidatedShippingLabel?: {url?: string} | null;
@@ -161,7 +161,8 @@ interface RawEvent {
 
 function eventSummary(e: RawEvent) {
   return {
-    event_id: e.id == null ? null : String(e.id), po_number: e.poNumber ?? null, pickup_date: e.pickupDate ?? null,
+    // Wayfair returns poNumber as a number (e.g. 123456789 for PO CS123456789: no two-letter prefix).
+    event_id: e.id == null ? null : String(e.id), po_number: e.poNumber == null ? null : String(e.poNumber), pickup_date: e.pickupDate ?? null,
     tracking: (e.generatedShippingLabels ?? []).map(l => ({carrier: l.carrierCode ?? null, tracking_number: l.trackingNumber ?? null})),
     documents: {
       shipping_label: Boolean(e.consolidatedShippingLabel?.url), bill_of_lading: Boolean(e.billOfLading?.url),

@@ -51,6 +51,10 @@ export const ACTION_SCHEMAS = {
   }),
   'parcel-confirm': z.object({staff: staffName, parcel_id: id, expected_row_version: rowVersion, confirmed: z.boolean()}),
   'parcel-remove': z.object({staff: staffName, parcel_id: id, expected_row_version: rowVersion}),
+  'parcel-packaging': z.object({
+    staff: staffName, parcel_id: id, expected_row_version: rowVersion, mode: z.enum(['measured', 'provider_managed']),
+    reason: z.string().trim().min(3, 'Say why this package differs from Wayfair data (at least 3 characters)').max(500).optional(),
+  }),
   'destination-confirm': z.object({
     staff: staffName, oms_order_id: id, iso2: z.string().trim().regex(/^[A-Za-z]{2}$/, 'Choose a country'),
     evidence_type: z.enum(EVIDENCE_TYPES), evidence_ref: z.string().trim().min(3, 'Describe the evidence (at least 3 characters)').max(500),
@@ -82,6 +86,7 @@ export const ACTION_FUNCTIONS = {
   'parcel-contents': 'staff_parcel_set_contents',
   'parcel-confirm': 'staff_parcel_confirm_contents',
   'parcel-remove': 'staff_parcel_remove',
+  'parcel-packaging': 'staff_parcel_set_packaging',
   'destination-confirm': 'staff_destination_confirm',
   'destination-revoke': 'staff_destination_revoke',
   'case-close': 'staff_case_close',

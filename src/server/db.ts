@@ -105,6 +105,7 @@ export const ACTIONS = [
   'staff_profile_save', 'staff_profile_assign',
   'staff_parcel_create', 'staff_parcel_measure', 'staff_parcel_set_contents', 'staff_parcel_confirm_contents', 'staff_parcel_remove',
   'staff_destination_confirm', 'staff_destination_revoke', 'staff_case_close', 'staff_discrepancy_acknowledge',
+  'staff_parcel_set_packaging',
 ] as const;
 export type ActionName = (typeof ACTIONS)[number];
 // Wayfair sandbox record functions (db/migrations/0010): called only by server code

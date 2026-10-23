@@ -76,6 +76,8 @@ pg -U "$SUPER" -d postgres -c "CREATE DATABASE $DB OWNER us_booking_owner" \
   PG_BIN="$PG_BIN" PORT="$PORT" DB="$DB" bash "$HERE/concurrency_contents.sh"
   echo "== tests: Wayfair sandbox records (0010)"
   pg -U "$SUPER" -d "$DB" -f "$HERE/tests_wayfair_sandbox.sql"
+  echo "== tests: Wayfair-managed packaging (0011)"
+  pg -U "$SUPER" -d "$DB" -f "$HERE/tests_packaging.sql"
   echo "== concurrency"
   PG_BIN="$PG_BIN" PORT="$PORT" DB="$DB" bash "$HERE/concurrency.sh"
 } 2>&1 | tee "$LOG"
