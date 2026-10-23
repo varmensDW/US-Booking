@@ -16,8 +16,8 @@
 
 | File | What |
 |---|---|
-| `db/proposed/0001_us_booking_init.sql` | Proposed schema (tables, views, integrity triggers). **Not applied to any application database** |
-| `db/proposed/0002_us_booking_grants.sql` | Proposed runtime-role privileges, table by table |
+| `db/proposed/0001_us_booking_init.sql` (now `db/migrations/0001_us_booking_init.sql`) | Proposed schema (tables, views, integrity triggers). Not applied at the time of this document. **Update 2026-10-23:** applied to `varmen_db.us_booking`; see `docs/setup.md` |
+| `db/proposed/0002_us_booking_grants.sql` | Proposed runtime-role privileges, table by table. **Update 2026-10-23:** not applied, because the approved setup uses a single role |
 | `db/checks/booking_db_preflight.sql` | Read-only catalog checks for the target in `BOOKING_DATABASE_URL` |
 | `db/tests/run_local_tests.sh`, `concurrency.sh`, `fixtures.sql`, `test_support.sql`, `tests.sql` | Disposable-cluster test suite with synthetic data |
 | `exports/us-booking/2026-10-22_shippo_oms_match/` | Phase 1 history exports (unchanged) |

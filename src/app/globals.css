@@ -1,0 +1,92 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* Design tokens. Text colours are chosen for >= 4.5:1 contrast on their usual backgrounds:
+   ink #0F172A and muted #475569 on white/canvas; primary #4F46E5 (6.3:1); teal-strong #0F766E
+   (5.5:1); review #B45309 on #FFFBEB (4.9:1); danger #B91C1C (6.5:1); success #15803D (5.0:1). */
+@theme {
+  --color-canvas: #F5F7FB;
+  --color-surface: #FFFFFF;
+  --color-navy: #111827;
+  --color-navy-2: #1F2937;
+  --color-navy-3: #374151;
+  --color-navy-text: #E5E7EB;
+  --color-navy-muted: #9CA3AF;
+  --color-ink: #0F172A;
+  --color-muted: #475569;
+  --color-subtle: #64748B;
+  --color-line: #E2E8F0;
+  --color-line-strong: #CBD5E1;
+  --color-primary: #4F46E5;
+  --color-primary-hover: #4338CA;
+  --color-primary-soft: #EEF2FF;
+  --color-primary-line: #C7D2FE;
+  --color-teal: #0D9488;
+  --color-teal-strong: #0F766E;
+  --color-teal-soft: #F0FDFA;
+  --color-teal-line: #99F6E4;
+  --color-review: #B45309;
+  --color-review-soft: #FFFBEB;
+  --color-review-line: #FDE68A;
+  --color-danger: #B91C1C;
+  --color-danger-soft: #FEF2F2;
+  --color-danger-line: #FECACA;
+  --color-success: #15803D;
+  --color-success-soft: #F0FDF4;
+  --color-success-line: #BBF7D0;
+  --color-info: #1D4ED8;
+  --color-info-soft: #EFF6FF;
+  --color-info-line: #BFDBFE;
+  --color-violet: #7E22CE;
+  --color-violet-soft: #FAF5FF;
+  --color-violet-line: #E9D5FF;
+  --color-orange: #C2410C;
+  --color-orange-soft: #FFF7ED;
+  --color-orange-line: #FED7AA;
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, SFMono-Regular, monospace;
+
+  --shadow-card: 0 1px 2px rgb(15 23 42 / 0.04), 0 1px 3px rgb(15 23 42 / 0.06);
+  --shadow-raised: 0 4px 12px rgb(15 23 42 / 0.08), 0 1px 3px rgb(15 23 42 / 0.06);
+  --shadow-drawer: -12px 0 32px rgb(15 23 42 / 0.16);
+
+  --animate-indeterminate: indeterminate 1.4s ease-in-out infinite;
+  @keyframes indeterminate {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(250%); }
+  }
+}
+
+@layer base {
+  html {
+    background: var(--color-canvas);
+    color: var(--color-ink);
+  }
+  body {
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  /* Clearly visible keyboard focus everywhere. */
+  :focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+  .on-navy :focus-visible {
+    outline-color: #A5B4FC;
+  }
+}
+
+/* Respect reduced motion: no spinning icons, sliding drawers, pulsing skeletons or progress bars. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

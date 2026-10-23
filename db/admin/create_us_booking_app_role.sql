@@ -1,5 +1,8 @@
 -- Create the us_booking_app runtime login role. FOR THE DATABASE ADMINISTRATOR.
 --
+-- NOT USED (2026-10-23): the approved setup uses varmen_user as both owner and runtime login.
+-- Kept only for a possible future separate runtime login.
+--
 -- Run interactively with psql, connected to varmen_db as a role that has CREATEROLE (or a
 -- superuser). varmen_user cannot run it: it has no CREATEROLE.
 --   psql -X "<admin connection to varmen_db>" -f db/admin/create_us_booking_app_role.sql

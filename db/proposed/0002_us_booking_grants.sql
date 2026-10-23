@@ -1,5 +1,11 @@
 -- 0002_us_booking_grants: PROPOSED runtime privileges for the us_booking schema (revision 2).
 --
+-- STATUS: NOT APPLIED, deferred. The approved setup (2026-10-23) uses varmen_user as both owner and
+-- runtime login, so these grants have no grantee. Kept for a possible future separate runtime
+-- login; it would then become a new numbered file in db/migrations/ (not 0002, which is taken by
+-- 0002_us_booking_schema_security.sql). The local test suite still applies it, to prove the
+-- separate-role design.
+--
 -- Two roles, created by a DBA beforehand (roles are cluster-level and are not created here):
 --   us_booking_owner  owns the schema and every object; runs migrations (DDL). Never used by the app.
 --   us_booking_app    runtime role. DML only, granted table by table below.

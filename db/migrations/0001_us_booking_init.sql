@@ -1,8 +1,9 @@
--- 0001_us_booking_init: PROPOSED schema for US Booking Automation, Phase 1 (revision 2, 2026-10-22).
+-- 0001_us_booking_init: schema for US Booking Automation, Phase 1 (revision 2, 2026-10-22).
 --
--- STATUS: PROPOSAL. Not applied to any application database. Kept in db/proposed/ (not
--- db/migrations/) so no runner can pick it up by accident. Validated only in a disposable local
--- test cluster by db/tests/run_local_tests.sh.
+-- Applied by scripts/db-migrate.mjs (npm run db:migrate) into varmen_db.us_booking, which records
+-- it in us_booking.schema_migration. Validated in a disposable local cluster by
+-- db/tests/run_local_tests.sh. Approved role setup: varmen_user owns the schema and is also the
+-- runtime login (single role). See 0002 and docs/setup.md for what that means for privileges.
 --
 -- Agreed scope: US1 warehouse fulfilment to US and Canada; booking and label printing only; the OMS
 -- (ledsone mirror, OMS_READ_DATABASE_URL) stays read-only and is never referenced by foreign key.
@@ -10,7 +11,7 @@
 -- Staff confirm package dimensions, weight and contents.
 --
 -- Conventions follow ledsone-vendor-booking: one app-owned schema, idempotent statements, every
--- object schema-qualified. Grants for the runtime role live in 0002_us_booking_grants.sql.
+-- object schema-qualified. Runtime-role grants for a future separate login are kept in db/proposed/.
 --
 -- Revision 2 corrections:
 --   1. Canada in scope; shipment requirements tracked separately from scope.

@@ -12,25 +12,29 @@ Staff confirm package dimensions, weight and contents before booking.
 
 ## Status
 
-- The booking schema is **proposed only** (`db/proposed/`). It has been tested in a disposable local PostgreSQL cluster, but not applied to any real database.
-- **No application, OMS sync or provider integration exists yet.**
-  - `src/` is empty.
-  - `ENABLE_LIVE_BOOKING` and `SHIPPO_MODE` are placeholders that nothing reads yet.
-- Booking target confirmed: `varmen_db`, schema `us_booking` (same server as the `ledsone` OMS, which stays read-only). The read-only preflight passed on 2026-10-22; nothing has been applied yet. See `docs/setup.md`.
+- The booking schema (rev 2) is **applied** in `varmen_db.us_booking` via `npm run db:migrate` (migrations 0001–0004, 2026-10-23).
+- Approved role setup: `varmen_user` owns the schema and is also the runtime login (`BOOKING_ROLE_MODE=single`). See `docs/setup.md` for what that does and does not enforce.
+- **OMS order sync:** `npm run sync:oms` (dry run) / `-- --apply`. It reads `ledsone` read-only and imports open US1 groups into the review queue. The first limited import ran on 2026-10-23: 15 groups, all awaiting review.
+- **Review dashboard:** `npm run build && npm run start` serves http://127.0.0.1:3100 (Order Review, Sync History, Settings). It is read-only except for the explicit Sync Orders action.
+- **No provider integration exists yet.** Purchase and print are unavailable; nothing is booked or printed.
+  - `ENABLE_LIVE_BOOKING` (false) and `SHIPPO_MODE` are placeholders that nothing reads yet.
 
 ## Folders
 
 | Path | Responsibility |
 |---|---|
-| `db/proposed/` | Proposed schema (`0001`) and runtime grants (`0002`). Not applied anywhere |
-| `db/checks/` | Read-only preflight for the booking database |
-| `db/tests/` | Schema test suite. Creates and deletes its own disposable cluster |
+| `db/migrations/` | Applied migrations (`0001` schema, `0002` schema security, `0003`/`0004` OMS sync), run by `npm run db:migrate` |
+| `db/proposed/` | Not applied: grants for a possible future separate runtime role |
+| `db/admin/` | DBA scripts. Not used in single-role mode |
+| `db/checks/` | Read-only checks: preflight, applied objects, OMS sync status, PUBLIC exposure |
+| `db/tests/` | Schema suite (`run_local_tests.sh`) and OMS sync suite (`run_sync_tests.sh`, synthetic OMS). Each creates and deletes its own disposable cluster |
 | `docs/phase1/` | Schema proposal, source verification and test results |
 | `docs/setup.md` | Local setup |
 | `exports/` | **Private** Phase 1 Shippo↔OMS match exports, raw extracts and `build.py`. Git-ignored |
-| `src/server/` | Future backend |
-| `src/client/` | Future booking interface |
-| `scripts/` | Project utilities (`check-env.mjs`) |
+| `src/app/` | Next.js pages and API routes |
+| `src/server/` | Server-only code: database access, read models, sync job; `sync/oms_extract.sql` (read-only OMS extraction) |
+| `src/client/` | Dashboard UI components and display rules |
+| `scripts/` | Commands: `check-env`, `db-preflight`, `db-migrate`, `oms-sync`; shared helpers in `lib/` |
 | `storage/labels/` | Local-development label storage only. Contents are git-ignored. Deployment storage is not configured yet |
 
 The original Shippo export, `export_user_*.csv`, stays at the project root because the Phase 1 exports reference it. It contains customer names and addresses and is git-ignored.
@@ -41,6 +45,8 @@ The original Shippo export, `export_user_*.csv`, stays at the project root becau
 copy .env.example .env      # only if .env does not exist yet; then fill in values locally
 npm run check:env           # names and status only, never values; connects to nothing
 npm run db:preflight        # read-only inspection of the booking database
+npm run db:migrate          # plan only; -- --dry-run / -- --apply
+npm run sync:oms            # OMS import dry run; -- --apply to commit
 ```
 
 See `docs/setup.md` for details.

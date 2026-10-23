@@ -434,3 +434,36 @@ SELECT test_support.expect_error('T6 even the owner cannot DELETE',   $q$DELETE 
 SELECT test_support.expect_error('T6 even the owner cannot TRUNCATE', $q$TRUNCATE us_booking.event_log$q$, 'append-only');
 RESET ROLE;
 SELECT test_support.ok('T6 event_log row intact', (SELECT actor FROM us_booking.event_log) = 'system:test');
+
+-- ============================================================================================
+-- T10 Single-role operation (approved setup: the owner login is also the runtime login).
+-- Business rules enforced by constraints, unique indexes and enabled triggers bind the owner too.
+-- Privilege-based restrictions do not; the "limitation" checks record that explicitly.
+-- ============================================================================================
+SELECT test_support.ok('T10 PUBLIC has no USAGE on us_booking',  NOT has_schema_privilege('public', 'us_booking', 'USAGE'));
+SELECT test_support.ok('T10 PUBLIC has no CREATE on us_booking', NOT has_schema_privilege('public', 'us_booking', 'CREATE'));
+SELECT test_support.ok('T10 PUBLIC cannot execute adjust_allocation',
+  NOT has_function_privilege('public', 'us_booking.adjust_allocation(bigint, integer)', 'EXECUTE'));
+SET ROLE us_booking_owner;
+SELECT test_support.expect_error('T10 owner: second purchase while a label is active',
+  $q$INSERT INTO us_booking.booking_attempt (parcel_id, fulfilment_group_id, provider, provider_account, attempt_generation, correlation_key, request_hash, requested_by)
+     VALUES (test_support.pid(9001, 1), test_support.gid(9001), 'shippo', 'shippo-test-acct', 9, 'usb:owner-dup', 'rh1', 'tester@example.test')$q$,
+  'already has a pending');
+SELECT test_support.expect_error('T10 owner: booked parcel measurements frozen',
+  $q$UPDATE us_booking.parcel SET weight_lb = 9 WHERE id = test_support.pid(9001, 1)$q$,
+  'frozen|locked');
+SELECT test_support.expect_error('T10 owner: zero dimension rejected',
+  $q$INSERT INTO us_booking.package_profile (name, length_in, width_in, height_in) VALUES ('owner-zero', 0, 1, 1)$q$,
+  'check constraint');
+SELECT test_support.expect_error('T10 owner: event_log UPDATE rejected', $q$UPDATE us_booking.event_log SET actor = 'x'$q$, 'append-only');
+SELECT test_support.ok('T10 limitation: owner holds UPDATE/DELETE on event_log (only the trigger stops it)',
+  has_table_privilege('us_booking.event_log', 'UPDATE') AND has_table_privilege('us_booking.event_log', 'DELETE'));
+SELECT test_support.ok('T10 limitation: owner can write item_allocation and country_map directly',
+  has_table_privilege('us_booking.item_allocation', 'UPDATE') AND has_table_privilege('us_booking.country_map', 'INSERT'));
+BEGIN;
+ALTER TABLE us_booking.booking_attempt DISABLE TRIGGER booking_attempt_insert;
+SELECT test_support.ok('T10 limitation: owner can disable the booking guard trigger (rolled back)', true);
+ROLLBACK;
+SELECT test_support.ok('T10 booking guard trigger still enabled after rollback',
+  (SELECT tgenabled FROM pg_trigger WHERE tgname = 'booking_attempt_insert') = 'O');
+RESET ROLE;

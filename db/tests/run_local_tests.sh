@@ -3,8 +3,8 @@
 #
 # It never connects to an existing server: it runs initdb in <work dir>, starts that cluster on a
 # private localhost port, verifies the connection really is that cluster (data_directory + port),
-# creates a uniquely named database, applies db/proposed/*.sql, loads synthetic fixtures, runs the
-# tests, then drops the database and deletes the cluster (set KEEP=1 to keep it for inspection).
+# creates a uniquely named database, applies db/migrations/*.sql plus the deferred separate-role
+# grants (db/proposed/0002), loads synthetic fixtures, runs the tests, then drops the database and deletes the cluster (set KEEP=1 to keep it for inspection).
 #
 # usage: db/tests/run_local_tests.sh <empty work dir>
 #   PG_BIN        PostgreSQL bin directory (default: C:\Program Files\PostgreSQL\18\bin)
@@ -28,7 +28,7 @@ if "$PG_BIN/pg_isready" -q -h 127.0.0.1 -p "$PORT"; then
 fi
 
 "$PG_BIN/initdb" -D "$DATA" -U "$SUPER" --auth=trust --encoding=UTF8 --no-locale >"$WORK/initdb_$RUN_ID.log"
-"$PG_BIN/pg_ctl" -D "$DATA" -o "-p $PORT -c listen_addresses=127.0.0.1" -l "$WORK/server_$RUN_ID.log" -w start >/dev/null
+"$PG_BIN/pg_ctl" -D "$DATA" -o "-p $PORT -c listen_addresses=127.0.0.1" -l "$WORK/server_$RUN_ID.log" -w start </dev/null >/dev/null 2>&1
 
 cleanup() {
   if [ "${KEEP:-0}" != 1 ]; then
@@ -58,11 +58,11 @@ pg -U "$SUPER" -d postgres -c "CREATE DATABASE $DB OWNER us_booking_owner" \
    -c "REVOKE ALL ON DATABASE $DB FROM PUBLIC" -c "GRANT CONNECT ON DATABASE $DB TO us_booking_app"
 
 {
-  echo "== apply 0001 (first run) as us_booking_owner"
-  pg -U us_booking_owner -d "$DB" -f "$ROOT/db/proposed/0001_us_booking_init.sql"
-  echo "== apply 0001 again (idempotency)"
-  pg -U us_booking_owner -d "$DB" -f "$ROOT/db/proposed/0001_us_booking_init.sql"
-  echo "== apply 0002 grants"
+  echo "== apply db/migrations/*.sql (first run) as us_booking_owner"
+  for f in "$ROOT"/db/migrations/*.sql; do pg -U us_booking_owner -d "$DB" -f "$f"; done
+  echo "== apply migrations again (idempotency)"
+  for f in "$ROOT"/db/migrations/*.sql; do pg -U us_booking_owner -d "$DB" -f "$f"; done
+  echo "== apply deferred separate-role grants (db/proposed/0002), for the T0-T9 runtime-role tests"
   pg -U us_booking_owner -d "$DB" -f "$ROOT/db/proposed/0002_us_booking_grants.sql"
   echo "== test support + fixtures"
   pg -U "$SUPER" -d "$DB" -f "$HERE/test_support.sql"
